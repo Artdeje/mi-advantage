@@ -1,0 +1,1715 @@
+import {
+  Customer,
+  Shop,
+  Sale,
+  Product,
+  AuditLog,
+  Customization,
+  AuthUser,
+  Admin,
+  VerificationCode,
+} from "../types";
+import { getSupabase, updateSupabaseClient, resetSupabaseClient } from "./supabaseClient";
+import {
+  sendEmail,
+  codeEmailTemplate,
+  approvalEmailTemplate,
+  rejectionEmailTemplate,
+} from "./email";
+
+// Feature flags for optional customers columns that ship via migrations.
+// v3: customer_type / student_id / university (supabase-migration-v3.sql)
+// v4: referee_number / card_status (supabase-migration-v4.sql)
+// v5: credit_status (supabase-migration-v5.sql)
+// Each falls back gracefully when its columns are missing.
+let customerV3ColumnsReady: boolean | null = null;
+let customerV4ColumnsReady: boolean | null = null;
+let customerV5ColumnsReady: boolean | null = null;
+let customerV6ColumnsReady: boolean | null = null;
+
+async function areCustomerV3ColumnsReady(): Promise<boolean> {
+  if (customerV3ColumnsReady !== null) return customerV3ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("customers")
+      .select("customer_type")
+      .limit(1);
+    customerV3ColumnsReady = !error;
+  } catch {
+    customerV3ColumnsReady = false;
+  }
+  return customerV3ColumnsReady;
+}
+
+async function areCustomerV4ColumnsReady(): Promise<boolean> {
+  if (customerV4ColumnsReady !== null) return customerV4ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("customers")
+      .select("referee_number,card_status")
+      .limit(1);
+    customerV4ColumnsReady = !error;
+  } catch {
+    customerV4ColumnsReady = false;
+  }
+  return customerV4ColumnsReady;
+}
+
+async function areCustomerV5ColumnsReady(): Promise<boolean> {
+  if (customerV5ColumnsReady !== null) return customerV5ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("customers")
+      .select("credit_status")
+      .limit(1);
+    customerV5ColumnsReady = !error;
+  } catch {
+    customerV5ColumnsReady = false;
+  }
+  return customerV5ColumnsReady;
+}
+
+// v6: subscription_status (mysql-migration-selfreg.sql)
+async function areCustomerV6ColumnsReady(): Promise<boolean> {
+  if (customerV6ColumnsReady !== null) return customerV6ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("customers")
+      .select("subscription_status")
+      .limit(1);
+    customerV6ColumnsReady = !error;
+  } catch {
+    customerV6ColumnsReady = false;
+  }
+  return customerV6ColumnsReady;
+}
+
+// Single source of truth for a card's current status.
+// A card whose expiration date/time has been REACHED is immediately marked for
+// renewal and is never accessible at scan terminals. 'expired' is treated as a
+// legacy alias of 'renew'.
+export type CardStatusProbe = {
+  card_status?: string;
+  valid_until?: string;
+  subscription_status?: string;
+};
+
+export function getCustomerCardStatus(
+  c: CardStatusProbe,
+): "active" | "renew" | "suspended" {
+  if (c.card_status === "suspended") return "suspended";
+  if (c.card_status === "renew" || c.card_status === "expired") return "renew";
+  if (!c.valid_until) return "active";
+  // Date-only values expire at the START of the expiry day (the date has been
+  // reached). Values with an exact time expire precisely at that time.
+  const expiry = c.valid_until.includes("T")
+    ? new Date(c.valid_until)
+    : new Date(c.valid_until + "T00:00:00");
+  if (new Date() >= expiry) return "renew";
+  return "active";
+}
+
+export function isCustomerCardExpired(c: CardStatusProbe): boolean {
+  return getCustomerCardStatus(c) === "renew";
+}
+
+// Returns the exact message that blocks a card at a scan terminal, or null if
+// the card may be used. Guarantees the ONLY message shown for expired cards is
+// "Renew your subscription".
+export function getCustomerCardBlockReason(c: CardStatusProbe): string | null {
+  // Self-registered online cards stay blocked until the subscription is paid,
+  // even inside their 14-day temporary window.
+  if (c.subscription_status === "unpaid")
+    return "Subscription payment required — complete payment to activate this card.";
+  const status = getCustomerCardStatus(c);
+  if (status === "suspended") return "Card suspended. Contact the administrator.";
+  if (status === "renew") return "Renew your subscription";
+  return null;
+}
+
+// Next sequential card ID (CUST-001, CUST-002, ...) skipping taken codes.
+// Shared by admin issuing and the public self-registration endpoint logic.
+export function nextSequentialCustomerCode(takenCodes: string[]): string {
+  const taken = new Set(takenCodes.map((c) => (c || "").toUpperCase().trim()));
+  const usedNums = new Set<number>();
+  for (const code of taken) {
+    const m = /^CUST-(\d+)$/.exec(code);
+    if (m) usedNums.add(parseInt(m[1], 10));
+  }
+  let n = 1;
+  while (usedNums.has(n) || taken.has(`CUST-${String(n).padStart(3, "0")}`)) n++;
+  return `CUST-${String(n).padStart(3, "0")}`;
+}
+
+export interface ProductInput {
+  name: string;
+  price: number | "";
+  stock: number | "";
+  description?: string;
+  status?: string;
+}
+
+// Pure product validation shared by the shop UI (and unit tests).
+// Returns an error message, or null when the input is valid.
+export function validateProductInput(input: ProductInput): string | null {
+  if (!input.name.trim()) return "Product name is required.";
+  if (input.price === "" || !Number.isFinite(Number(input.price)))
+    return "Price must be a valid number.";
+  if (Number(input.price) < 0) return "Price must be 0 or more.";
+  if (
+    input.stock === "" ||
+    !Number.isInteger(Number(input.stock)) ||
+    Number(input.stock) < 0
+  )
+    return "Stock must be a whole number (0 or more).";
+  if ((input.description || "").length > 500)
+    return "Description is too long (max 500 characters).";
+  if (
+    input.status !== undefined &&
+    input.status !== "active" &&
+    input.status !== "hidden"
+  )
+    return "Invalid product status.";
+  return null;
+}
+
+const SEED_SHOPS: Shop[] = [
+  {
+    id: "shop-1",
+    shop_name: "Kigali Fashion House",
+    discount_percent: 12,
+    email: "kigalifashion@shop.com",
+    password: "shop123",
+    created_at: "2026-07-01T10:00:00Z",
+  },
+  {
+    id: "shop-2",
+    shop_name: "Simba Supermarket",
+    discount_percent: 8,
+    email: "simba@shop.com",
+    password: "shop123",
+    created_at: "2026-07-01T11:00:00Z",
+  },
+  {
+    id: "shop-3",
+    shop_name: "Inzora Rooftop Cafe",
+    discount_percent: 15,
+    email: "inzora@shop.com",
+    password: "shop123",
+    created_at: "2026-07-02T09:00:00Z",
+  },
+  {
+    id: "shop-4",
+    shop_name: "Gisenyi Beach Resort",
+    discount_percent: 20,
+    email: "gisenyiresort@shop.com",
+    password: "shop123",
+    created_at: "2026-07-03T14:00:00Z",
+  },
+];
+
+export const SEED_CUSTOMERS: Customer[] = [
+  {
+    id: "cust-1",
+    name: "Jean Luc Mutara",
+    email: "jeanluc@example.com",
+    phone: "+250788123456",
+    qr_code: "CUST-9821",
+    created_at: "2026-07-01T08:30:00Z",
+    valid_until: "2027-07-01",
+    customer_type: "student",
+    student_id: "STU-2023-0451",
+    university: "University of Rwanda",
+    card_status: "active",
+  },
+  {
+    id: "cust-2",
+    name: "Aline Uwase",
+    email: "aline@example.com",
+    phone: "+250788654321",
+    qr_code: "CUST-1123",
+    created_at: "2026-07-02T10:15:00Z",
+    valid_until: "2027-07-02",
+    customer_type: "other",
+    referee_number: "CUST-9821",
+    card_status: "active",
+  },
+  {
+    id: "cust-3",
+    name: "Eric Ndahiro",
+    email: "ericn@example.com",
+    phone: "+250789555666",
+    qr_code: "CUST-4567",
+    created_at: "2026-07-03T11:45:00Z",
+    valid_until: "2027-07-03",
+    referee_number: "CUST-9821",
+    card_status: "active",
+  },
+  {
+    id: "cust-4",
+    name: "Marie Claire Uwineza",
+    email: "claire@example.com",
+    phone: "+250782111222",
+    qr_code: "CUST-3049",
+    created_at: "2026-07-04T15:20:00Z",
+    valid_until: "2027-07-04",
+    customer_type: "student",
+    student_id: "STU-2024-1187",
+    university: "Kigali Independent University",
+    referee_number: "CUST-1123",
+    card_status: "active",
+  },
+  {
+    id: "cust-5",
+    name: "Divine Karemera",
+    email: "divine@example.com",
+    phone: "+250783999888",
+    qr_code: "CUST-8072",
+    created_at: "2026-07-05T16:10:00Z",
+    valid_until: "2027-07-05",
+    referee_number: "CUST-1123",
+    card_status: "active",
+  },
+];
+
+const SEED_CUSTOMIZATION: Customization = {
+  theme_color: "green",
+  logo_url: "",
+  title: "Mi Advantage QR Card Scan & Shop",
+  subtitle: "Kigali Premium Privilege",
+  favicon_url: "",
+  home_h1: "Instant Merchant Discounts",
+  home_h2: "QR Member Advantage System",
+  home_p:
+    "Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly.",
+  login_heading: "Sign In",
+  login_subtext: "Access your Mi Advantage dashboard",
+  signup_heading: "Create Admin Account",
+  signup_subtext: "Register a new administrator account",
+  primary_color: "#059669",
+  secondary_color: "#0d9488",
+  accent_color: "#f59e0b",
+  background_color: "#f8fafc",
+  font_family: "Inter",
+  heading_font: "Space Grotesk",
+  login_background_type: "gradient",
+  login_background_value: "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)",
+  custom_css: "",
+};
+
+export class SupabaseDatabaseService {
+  updateConfig(url: string, key: string) {
+    return updateSupabaseClient(url, key);
+  }
+
+  resetConfig() {
+    return resetSupabaseClient();
+  }
+
+  getCurrentConfig() {
+    const useCustomConfig =
+      localStorage.getItem("mi_supabase_config_override") === "true";
+    return {
+      url:
+        (useCustomConfig && localStorage.getItem("mi_supabase_url")) ||
+        import.meta.env.VITE_SUPABASE_URL ||
+        "https://wbldciermnpgmlsookrs.supabase.co",
+      key:
+        (useCustomConfig && localStorage.getItem("mi_supabase_anon_key")) ||
+        import.meta.env.VITE_SUPABASE_ANON_KEY ||
+        "",
+      isOverridden: useCustomConfig,
+    };
+  }
+
+  get currentUser(): AuthUser | null {
+    const user = localStorage.getItem("mi_auth_user");
+    return user ? JSON.parse(user) : null;
+  }
+  set currentUser(val: AuthUser | null) {
+    if (val) {
+      localStorage.setItem("mi_auth_user", JSON.stringify(val));
+    } else {
+      localStorage.removeItem("mi_auth_user");
+    }
+  }
+
+  async getAdmins(): Promise<Admin[]> {
+    try {
+      const { data, error } = await getSupabase()
+        .from("admins")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (!error && data) return data as Admin[];
+    } catch (e) {
+      console.warn("Supabase admins fetch failed:", e);
+    }
+    return [];
+  }
+
+  async createAdmin(
+    name: string,
+    email: string,
+    pass: string,
+    role: "super_admin" | "admin" = "admin",
+  ): Promise<{ admin: Admin | null; error: string | null }> {
+    const currentAdmins = await this.getAdmins();
+    if (
+      currentAdmins.some((a) => a.email.toLowerCase() === email.toLowerCase())
+    ) {
+      return {
+        admin: null,
+        error: "An administrator with this email already exists!",
+      };
+    }
+
+    const newAdmin: Admin = {
+      id: "admin-" + Date.now(),
+      name,
+      email: email.toLowerCase().trim(),
+      password: pass,
+      role,
+      status: "active",
+      email_verified: false,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await getSupabase().from("admins").insert([newAdmin]);
+      if (error) return { admin: null, error: error.message };
+    } catch (e: any) {
+      return { admin: null, error: e?.message || "Insert failed" };
+    }
+
+    // Send email verification code - new admins must verify before signing in
+    await this.sendVerificationCode(newAdmin.email, "admin");
+
+    await this.addLog(
+      "Admin Created",
+      "Admin",
+      this.currentUser?.email || "unknown",
+      `Registered new administrator account: ${name} (${email}) with role ${role}. Verification email sent.`,
+    );
+    return { admin: newAdmin, error: null };
+  }
+
+  async updateAdmin(
+    id: string,
+    updates: Partial<Admin>,
+  ): Promise<{ admin: Admin | null; error: string | null }> {
+    try {
+      const { data, error } = await getSupabase()
+        .from("admins")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return { admin: null, error: error.message };
+
+      await this.addLog(
+        "Admin Updated",
+        "Admin",
+        this.currentUser?.email || "unknown",
+        `Updated profile settings for admin: ${data?.name || id}.`,
+      );
+      return { admin: data as Admin, error: null };
+    } catch (e: any) {
+      return { admin: null, error: e?.message || "Update failed" };
+    }
+  }
+
+  async deleteAdmin(
+    id: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    const currentAdmins = await this.getAdmins();
+    if (currentAdmins.length <= 1) {
+      return {
+        success: false,
+        error: "Cannot delete the only remaining administrator account.",
+      };
+    }
+
+    const admin = currentAdmins.find((a) => a.id === id);
+    if (admin?.role === "super_admin") {
+      return {
+        success: false,
+        error: "The super admin account cannot be deleted.",
+      };
+    }
+    try {
+      const { error } = await getSupabase().from("admins").delete().eq("id", id);
+      if (error) return { success: false, error: error.message };
+
+      await this.addLog(
+        "Admin Deleted",
+        "Admin",
+        this.currentUser?.email || "unknown",
+        `Removed admin account: ${admin?.name || id}.`,
+      );
+      return { success: true, error: null };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Delete failed" };
+    }
+  }
+
+  async getShops(): Promise<Shop[]> {
+    try {
+      const { data, error } = await getSupabase()
+        .from("shops")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (!error && data) return data as Shop[];
+    } catch (e) {
+      console.warn("Supabase shops fetch failed:", e);
+    }
+    return [];
+  }
+
+  // Generate a unique public guest-scan code (SHOP-####) for a shop.
+  private async generateUniqueShopQRCode(): Promise<string> {
+    const shops = await this.getShops();
+    const taken = new Set(
+      shops.map((s) => (s.qr_code || "").toUpperCase()).filter(Boolean),
+    );
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const code = `SHOP-${Math.floor(1000 + Math.random() * 9000)}`;
+      if (!taken.has(code)) return code;
+    }
+    // Fallback: timestamp-suffixed (still matches SHOP- prefix convention)
+    return `SHOP-${Date.now().toString().slice(-6)}`;
+  }
+
+  // Public guest lookup: find an approved shop by its QR code (exact match).
+  // Safe for unauthenticated use — getShops() is a public endpoint.
+  async getShopByQRCode(qrCode: string): Promise<Shop | null> {
+    const clean = qrCode.trim();
+    if (!clean) return null;
+    const shops = await this.getShops();
+    const match =
+      shops.find(
+        (s) => (s.qr_code || "").toLowerCase() === clean.toLowerCase(),
+      ) ||
+      shops.find((s) => s.id.toLowerCase() === clean.toLowerCase()) ||
+      null;
+    if (!match) return null;
+    if (match.status && match.status !== "approved") return null;
+    return match;
+  }
+
+  // Admin maintenance: give every shop missing a guest-scan QR a unique one.
+  // Returns the number of shops fixed (0 = all valid already).
+  async ensureAllShopQRCodes(): Promise<{ fixed: number; error: string | null }> {
+    try {
+      const shops = await this.getShops();
+      const taken = new Set(
+        shops.map((s) => (s.qr_code || "").toUpperCase()).filter(Boolean),
+      );
+      let fixed = 0;
+      for (const shop of shops) {
+        if (shop.qr_code && shop.qr_code.trim()) continue;
+        let code = "";
+        for (let attempt = 0; attempt < 50 && !code; attempt++) {
+          const c = `SHOP-${Math.floor(1000 + Math.random() * 9000)}`;
+          if (!taken.has(c)) code = c;
+        }
+        if (!code) code = `SHOP-${Date.now().toString().slice(-6)}`;
+        const { error } = await this.updateShop(shop.id, { qr_code: code });
+        if (error) {
+          return {
+            fixed,
+            error: error.includes("column")
+              ? "Database needs the shop QR migration: run mysql-migration-shop-qr.sql, then retry."
+              : error,
+          };
+        }
+        taken.add(code);
+        fixed++;
+      }
+      return { fixed, error: null };
+    } catch (e: any) {
+      return { fixed: 0, error: e?.message || "Failed to fix shop QR codes." };
+    }
+  }
+
+  // ---- Product / menu catalog (per shop) ----
+  async getProducts(shopId?: string): Promise<Product[]> {
+    try {
+      let query = getSupabase()
+        .from("products")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (shopId) query = query.eq("shop_id", shopId);
+      const { data, error } = await query;
+      if (!error && data) return data as Product[];
+    } catch (e) {
+      console.warn("Supabase products fetch failed:", e);
+    }
+    return [];
+  }
+
+  async createProduct(
+    shopId: string,
+    input: ProductInput,
+  ): Promise<{ product: Product | null; error: string | null }> {
+    const validation = validateProductInput(input);
+    if (validation) return { product: null, error: validation };
+    const newProduct: Product = {
+      id: "prod-" + Date.now(),
+      shop_id: shopId,
+      name: input.name.trim(),
+      price: Number(input.price) || 0,
+      stock: Math.floor(Number(input.stock)) || 0,
+      description: (input.description || "").trim(),
+      status: input.status === "hidden" ? "hidden" : "active",
+      created_at: new Date().toISOString(),
+    };
+    try {
+      const { error } = await getSupabase()
+        .from("products")
+        .insert([newProduct]);
+      if (error) {
+        return {
+          product: null,
+          error: error.message.includes("products")
+            ? "Database needs the products migration: run mysql-migration-products.sql, then retry."
+            : error.message,
+        };
+      }
+    } catch (e: any) {
+      return { product: null, error: e?.message || "Insert failed" };
+    }
+    await this.addLog(
+      "Product Created",
+      "Shop",
+      this.currentUser?.email || "unknown",
+      `Added product ${newProduct.name} (${newProduct.price} RWF) to the menu.`,
+    );
+    return { product: newProduct, error: null };
+  }
+
+  async updateProduct(
+    id: string,
+    updates: Partial<Product>,
+  ): Promise<{ product: Product | null; error: string | null }> {
+    try {
+      const patch: Partial<Product> = {};
+      if (updates.name !== undefined) {
+        if (!updates.name.trim()) return { product: null, error: "Product name is required." };
+        patch.name = updates.name.trim();
+      }
+      if (updates.price !== undefined) {
+        if (!Number.isFinite(Number(updates.price)) || Number(updates.price) < 0)
+          return { product: null, error: "Price must be 0 or more." };
+        patch.price = Number(updates.price);
+      }
+      if (updates.stock !== undefined) {
+        if (!Number.isInteger(Number(updates.stock)) || Number(updates.stock) < 0)
+          return { product: null, error: "Stock must be a whole number (0 or more)." };
+        patch.stock = Math.floor(Number(updates.stock));
+      }
+      if (updates.description !== undefined) {
+        if (updates.description.length > 500)
+          return { product: null, error: "Description is too long (max 500 characters)." };
+        patch.description = updates.description;
+      }
+      if (updates.status !== undefined) {
+        if (updates.status !== "active" && updates.status !== "hidden")
+          return { product: null, error: "Invalid product status." };
+        patch.status = updates.status;
+      }
+      if (updates.image_url !== undefined) patch.image_url = updates.image_url;
+      if (Object.keys(patch).length === 0)
+        return { product: null, error: "No changes to save." };
+      const { data, error } = await getSupabase()
+        .from("products")
+        .update(patch)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return { product: null, error: error.message };
+      await this.addLog(
+        "Product Updated",
+        "Shop",
+        this.currentUser?.email || "unknown",
+        `Updated product ${(data as Product)?.name || id}.`,
+      );
+      return { product: data as Product, error: null };
+    } catch (e: any) {
+      return { product: null, error: e?.message || "Update failed" };
+    }
+  }
+
+  async deleteProduct(id: string): Promise<{ success: boolean; error: string | null }> {
+    try {
+      const { error } = await getSupabase().from("products").delete().eq("id", id);
+      if (error) return { success: false, error: error.message };
+      await this.addLog(
+        "Product Deleted",
+        "Shop",
+        this.currentUser?.email || "unknown",
+        `Removed product ${id} from the menu.`,
+      );
+      return { success: true, error: null };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Delete failed" };
+    }
+  }
+
+  async createShop(
+    name: string,
+    discount: number,
+    email: string,
+    pass: string,
+    description?: string,
+  ): Promise<{ shop: Shop | null; error: string | null }> {
+    const currentShops = await this.getShops();
+    if (
+      currentShops.some((s) => s.email.toLowerCase() === email.toLowerCase())
+    ) {
+      return { shop: null, error: "A shop with this email already exists!" };
+    }
+
+    const newShop: Shop = {
+      id: "shop-" + Date.now(),
+      shop_name: name,
+      discount_percent: discount,
+      email: email,
+      password: pass,
+      qr_code: await this.generateUniqueShopQRCode(),
+      description: description?.trim() || undefined,
+      status: "approved",
+      email_verified: true,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await getSupabase().from("shops").insert([newShop]);
+      if (error) return { shop: null, error: error.message };
+    } catch (e: any) {
+      return { shop: null, error: e?.message || "Insert failed" };
+    }
+
+    await this.addLog(
+      "Shop Created",
+      "Admin",
+      this.currentUser?.email || "unknown",
+      `Registered new shop ${name} with ${discount}% discount (admin-approved).`,
+    );
+    return { shop: newShop, error: null };
+  }
+
+  // Shop self-registration: starts pending, requires email verification + admin approval
+  async signUpShop(
+    name: string,
+    email: string,
+    pass: string,
+    contract: string,
+    rdbCertificate: string,
+  ): Promise<{ success: boolean; emailSent: boolean; error: string | null }> {
+    const cleanEmail = email.toLowerCase().trim();
+
+    const { data: existing, error: lookupError } = await getSupabase()
+      .from("shops")
+      .select("id,email")
+      .ilike("email", cleanEmail)
+      .maybeSingle();
+    if (lookupError) {
+      return { success: false, emailSent: false, error: "Database error: " + lookupError.message };
+    }
+    if (existing) {
+      return {
+        success: false,
+        emailSent: false,
+        error: "A shop with this email is already registered. Sign in or use password recovery.",
+      };
+    }
+
+    const newShop: Shop = {
+      id: "shop-" + Date.now(),
+      shop_name: name,
+      discount_percent: 10,
+      email: cleanEmail,
+      password: pass,
+      qr_code: await this.generateUniqueShopQRCode(),
+      status: "pending",
+      contract: contract || undefined,
+      rdb_certificate: rdbCertificate || undefined,
+      email_verified: false,
+      created_at: new Date().toISOString(),
+    };
+
+    const { error: insertError } = await getSupabase()
+      .from("shops")
+      .insert([newShop]);
+    if (insertError) {
+      if (insertError.message.includes("column")) {
+        return {
+          success: false,
+          emailSent: false,
+          error: "Database migration required. Run supabase-migration.sql in your Supabase SQL Editor, then npm run db:init.",
+        };
+      }
+      return { success: false, emailSent: false, error: insertError.message };
+    }
+
+    const emailSent = await this.sendVerificationCode(cleanEmail, "shop");
+
+    await this.addLog(
+      "Shop Application Submitted",
+      "Shop",
+      cleanEmail,
+      `New shop application: ${name}. Status: pending approval. Verification email ${emailSent ? "sent" : "failed"}.`,
+    );
+    return { success: true, emailSent, error: null };
+  }
+
+  async approveShop(
+    id: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    const shops = await this.getShops();
+    const shop = shops.find((s) => s.id === id);
+    if (!shop) return { success: false, error: "Shop not found." };
+
+    const { error } = await getSupabase()
+      .from("shops")
+      .update({ status: "approved" })
+      .eq("id", id);
+    if (error) return { success: false, error: error.message };
+
+    await sendEmail(
+      shop.email,
+      "Your Mi Advantage shop application is approved",
+      approvalEmailTemplate(shop.shop_name),
+    );
+
+    await this.addLog(
+      "Shop Approved",
+      "Admin",
+      this.currentUser?.email || "unknown",
+      `Approved shop application: ${shop.shop_name} (${shop.email}).`,
+    );
+    return { success: true, error: null };
+  }
+
+  async rejectShop(
+    id: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    const shops = await this.getShops();
+    const shop = shops.find((s) => s.id === id);
+    if (!shop) return { success: false, error: "Shop not found." };
+
+    const { error } = await getSupabase()
+      .from("shops")
+      .update({ status: "rejected" })
+      .eq("id", id);
+    if (error) return { success: false, error: error.message };
+
+    await sendEmail(
+      shop.email,
+      "Update on your Mi Advantage shop application",
+      rejectionEmailTemplate(shop.shop_name),
+    );
+
+    await this.addLog(
+      "Shop Rejected",
+      "Admin",
+      this.currentUser?.email || "unknown",
+      `Rejected shop application: ${shop.shop_name} (${shop.email}).`,
+    );
+    return { success: true, error: null };
+  }
+
+  // --- Email verification codes (stored in DB, sent via Gmail SMTP) ---
+
+  async sendVerificationCode(
+    email: string,
+    userType: "admin" | "shop",
+    purpose: "signup" | "password_reset" = "signup",
+  ): Promise<boolean> {
+    const cleanEmail = email.toLowerCase().trim();
+    const code = "MA-" + Math.floor(100000 + Math.random() * 900000);
+    const record: Partial<VerificationCode> = {
+      id: "vcode-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+      email: cleanEmail,
+      code,
+      purpose,
+      user_type: userType,
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      used: false,
+    };
+
+    const { error } = await getSupabase()
+      .from("verification_codes")
+      .insert([record]);
+    if (error) {
+      console.error("Could not store verification code:", error.message);
+      return false;
+    }
+
+    const subject =
+      purpose === "signup"
+        ? "Verify your Mi Advantage account"
+        : "Mi Advantage password reset code";
+    const purposeText =
+      purpose === "signup"
+        ? "Use this code to verify your email address and activate your account:"
+        : "Use this code to reset your account password:";
+    const result = await sendEmail(cleanEmail, subject, codeEmailTemplate(code, purposeText));
+    return result.success;
+  }
+
+  async verifyEmailCode(
+    email: string,
+    code: string,
+    purpose: "signup" | "password_reset" = "signup",
+  ): Promise<{ success: boolean; userType: "admin" | "shop" | null; error: string | null }> {
+    const cleanEmail = email.toLowerCase().trim();
+    // Use the server's public verification endpoint (no auth required)
+    const API_BASE = import.meta.env.VITE_API_URL || "";
+    try {
+      const res = await fetch(`${API_BASE}/api/db/auth/verify-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail, code: code.trim(), purpose }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { success: false, userType: null, error: body.error || "Verification failed." };
+      return { success: true, userType: body.userType || null, error: null };
+    } catch (e: any) {
+      return { success: false, userType: null, error: e?.message || "Verification failed." };
+    }
+  }
+
+  async updateShop(
+    id: string,
+    updates: Partial<Shop>,
+  ): Promise<{ shop: Shop | null; error: string | null }> {
+    try {
+      const { data, error } = await getSupabase()
+        .from("shops")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return { shop: null, error: error.message };
+
+      await this.addLog(
+        "Shop Updated",
+        "Admin",
+        this.currentUser?.email || "unknown",
+        `Updated configurations for shop: ${data?.shop_name || id}.`,
+      );
+      return { shop: data as Shop, error: null };
+    } catch (e: any) {
+      return { shop: null, error: e?.message || "Update failed" };
+    }
+  }
+
+  async deleteShop(
+    id: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    const shop = (await this.getShops()).find((s) => s.id === id);
+    try {
+      const { error } = await getSupabase().from("shops").delete().eq("id", id);
+      if (error) return { success: false, error: error.message };
+
+      await this.addLog(
+        "Shop Deleted",
+        "Admin",
+        this.currentUser?.email || "unknown",
+        `Removed shop ${shop?.shop_name || id} from registry.`,
+      );
+      return { success: true, error: null };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Delete failed" };
+    }
+  }
+
+  // Reconcile a card's status against its expiration date automatically, in
+  // BOTH directions:
+  //   - expiration date/time reached  -> status becomes 'renew' (access blocked)
+  //   - card renewed (new future date) -> status becomes 'active' (access back)
+  // Suspended cards keep their admin-imposed state.
+  private async reconcileCustomerStatus(c: Customer): Promise<Customer> {
+    const desired =
+      c.card_status === "suspended"
+        ? "suspended"
+        : isCustomerCardExpired(c)
+          ? "renew"
+          : "active";
+    if (c.card_status === desired) return c;
+    try {
+      const { error } = await getSupabase()
+        .from("customers")
+        .update({ card_status: desired })
+        .eq("id", c.id);
+      if (error) {
+        console.warn("Supabase card status reconcile failed:", error.message);
+        return c;
+      }
+    } catch (e) {
+      console.warn("Supabase card status reconcile failed:", e);
+      return c;
+    }
+    return { ...c, card_status: desired };
+  }
+
+  async getCustomers(): Promise<Customer[]> {
+    let data: Customer[] | null = null;
+    try {
+      const { data: d, error } = await getSupabase()
+        .from("customers")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error && d) data = d as Customer[];
+    } catch (e) {
+      console.warn("Supabase customers fetch failed:", e);
+    }
+    if (!data) return [];
+
+    // Auto status sweep: persist BOTH the 'renew' flip (expired cards) and the
+    // 'active' flip (cards renewed into the future) based on valid_until.
+    const needsRenew = data.filter(
+      (c) =>
+        c.card_status !== "suspended" &&
+        isCustomerCardExpired(c) &&
+        c.card_status !== "renew",
+    );
+    const needsActive = data.filter(
+      (c) =>
+        c.card_status !== "suspended" &&
+        !isCustomerCardExpired(c) &&
+        c.card_status === "renew",
+    );
+    const statusById = new Map<string, "renew" | "active">();
+    needsRenew.forEach((c) => statusById.set(c.id, "renew"));
+    needsActive.forEach((c) => statusById.set(c.id, "active"));
+
+    if (statusById.size > 0) {
+      const batches: Array<{ status: "renew" | "active"; ids: string[] }> = [];
+      const renewIds = needsRenew.map((c) => c.id);
+      const activeIds = needsActive.map((c) => c.id);
+      if (renewIds.length > 0) batches.push({ status: "renew", ids: renewIds });
+      if (activeIds.length > 0) batches.push({ status: "active", ids: activeIds });
+      await Promise.all(
+        batches.map(async ({ status, ids }) => {
+          try {
+            const { error } = await getSupabase()
+              .from("customers")
+              .update({ card_status: status })
+              .in("id", ids);
+            if (error) {
+              console.warn("Supabase auto card status sweep failed:", error.message);
+            }
+          } catch (e) {
+            console.warn("Supabase auto card status sweep failed:", e);
+          }
+        }),
+      );
+      data = data.map((c) => {
+        const status = statusById.get(c.id);
+        return status ? { ...c, card_status: status } : c;
+      });
+    }
+    return data;
+  }
+
+  async createCustomer(
+    name: string,
+    email: string,
+    phone: string,
+    validUntil?: string,
+    opts?: Partial<
+      Pick<
+        Customer,
+        "customer_type" | "student_id" | "university" | "referee_number"
+      >
+    >,
+  ): Promise<{ customer: Customer | null; error: string | null }> {
+    const currentCustomers = await this.getCustomers();
+    const cleanEmail = (email || "").trim();
+    const existing = cleanEmail
+      ? currentCustomers.find(
+          (c) => (c.email || "").toLowerCase() === cleanEmail.toLowerCase(),
+        )
+      : undefined;
+    if (existing) {
+      const updates: Partial<Customer> = {};
+      if (validUntil) updates.valid_until = validUntil;
+      if (opts?.customer_type) updates.customer_type = opts.customer_type;
+      if (opts?.student_id !== undefined) updates.student_id = opts.student_id;
+      if (opts?.university !== undefined) updates.university = opts.university;
+      if (opts?.referee_number !== undefined)
+        updates.referee_number = opts.referee_number;
+      if (Object.keys(updates).length > 0) {
+        await this.updateCustomer(existing.id, updates);
+      }
+      return { customer: existing, error: null };
+    }
+
+    // Sequential card IDs starting at CUST-001 (skips taken codes).
+    const newCust: Customer = {
+      id: "cust-" + Date.now(),
+      name,
+      email: cleanEmail || undefined,
+      phone,
+      qr_code: nextSequentialCustomerCode(
+        currentCustomers.map((c) => c.qr_code),
+      ),
+      created_at: new Date().toISOString(),
+      valid_until:
+        validUntil ||
+        new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0],
+    };
+    if (await areCustomerV3ColumnsReady()) {
+      newCust.customer_type = opts?.customer_type || "other";
+      newCust.student_id = opts?.student_id || "";
+      newCust.university = opts?.university || "";
+    }
+    if (await areCustomerV4ColumnsReady()) {
+      newCust.referee_number = opts?.referee_number || "";
+      newCust.card_status = "active";
+    }
+    if (await areCustomerV5ColumnsReady()) {
+      newCust.credit_status = "pending";
+    }
+    // Admin-issued cards are physical 1-year cards: treated as paid.
+    if (await areCustomerV6ColumnsReady()) {
+      newCust.subscription_status = "paid";
+    }
+
+    try {
+      const { error } = await getSupabase()
+        .from("customers")
+        .insert([newCust]);
+      if (error) return { customer: null, error: error.message };
+    } catch (e: any) {
+      return { customer: null, error: e?.message || "Insert failed" };
+    }
+
+    await this.addLog(
+      "Customer QR Generated",
+      "Admin",
+      this.currentUser?.email || "unknown",
+      `Generated unique QR Code ${newCust.qr_code} for ${name} valid until ${newCust.valid_until}.`,
+    );
+    return { customer: newCust, error: null };
+  }
+
+  // Public self-registration from the /join page: no login, no email.
+  // The server issues the next sequential CUST-001+ card ID, a 14-day online
+  // card (valid_until), and an unpaid subscription (discounts blocked until
+  // payment). Referrer codes are validated server-side.
+  async selfRegisterCustomer(input: {
+    name: string;
+    phone: string;
+    customer_type?: string;
+    student_id?: string;
+    university?: string;
+    referee_number?: string;
+  }): Promise<{ customer: Customer | null; error: string | null }> {
+    try {
+      const { data, error } = await getSupabase().registerCustomer(input);
+      if (error) return { customer: null, error: error.message };
+      return { customer: data as Customer, error: null };
+    } catch (e: any) {
+      return { customer: null, error: e?.message || "Registration failed" };
+    }
+  }
+
+  // Public subscription activation (mobile-money confirmation).
+  // Flips the card to paid/active with a 1-year physical-card validity.
+  async activateCustomerSubscription(input: {
+    customerId: string;
+    provider: string;
+    senderPhone: string;
+    txCode: string;
+  }): Promise<{ customer: Customer | null; error: string | null }> {
+    try {
+      const { data, error } = await getSupabase().activateSubscription(input);
+      if (error) return { customer: null, error: error.message };
+      return { customer: data as Customer, error: null };
+    } catch (e: any) {
+      return { customer: null, error: e?.message || "Activation failed" };
+    }
+  }
+
+  async updateCustomer(
+    id: string,
+    updates: Partial<Customer>,
+  ): Promise<{ customer: Customer | null; error: string | null }> {    const safeUpdates = { ...updates };
+    if (!(await areCustomerV3ColumnsReady())) {
+      delete safeUpdates.customer_type;
+      delete safeUpdates.student_id;
+      delete safeUpdates.university;
+    }
+    if (!(await areCustomerV4ColumnsReady())) {
+      delete safeUpdates.referee_number;
+      delete safeUpdates.card_status;
+    }
+    if (!(await areCustomerV5ColumnsReady())) {
+      delete safeUpdates.credit_status;
+    }
+    if (!(await areCustomerV6ColumnsReady())) {
+      delete safeUpdates.subscription_status;
+    }
+    try {
+      const { data, error } = await getSupabase()
+        .from("customers")
+        .update(safeUpdates)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return { customer: null, error: error.message };
+
+      // Auto status: if the admin renewed the card (new future expiry) without
+      // explicitly setting a status, flip it back to 'active' automatically.
+      // Past expiry is flipped to 'renew' here as well as by the load sweep.
+      if (updates.card_status === undefined && updates.valid_until !== undefined) {
+        const reconciled = await this.reconcileCustomerStatus(data as Customer);
+        return { customer: reconciled, error: null };
+      }
+
+      await this.addLog(
+        "Customer Card Updated",
+        "Admin",
+        this.currentUser?.email || "unknown",
+        `Updated configurations for customer: ${data?.name || id}.`,
+      );
+      return { customer: data as Customer, error: null };
+    } catch (e: any) {
+      return { customer: null, error: e?.message || "Update failed" };
+    }
+  }
+
+  // Approve / mark paid a referrer reward credit earned by a referred member.
+  async setCustomerCreditStatus(
+    id: string,
+    status: Customer["credit_status"],
+  ): Promise<{ success: boolean; error: string | null }> {
+    const customer = (await this.getCustomers()).find((c) => c.id === id);
+    const { error } = await this.updateCustomer(id, { credit_status: status });
+    if (error) return { success: false, error };
+    if (status === "approved") {
+      await this.addLog(
+        "Referrer Credit Approved",
+        "Admin",
+        this.currentUser?.email || "unknown",
+        `Approved referral credit for ${customer?.name || id}.`,
+      );
+    } else if (status === "paid") {
+      await this.addLog(
+        "Referrer Credit Paid",
+        "Admin",
+        this.currentUser?.email || "unknown",
+        `Marked referral credit as PAID for ${customer?.name || id}.`,
+      );
+    }
+    return { success: true, error: null };
+  }
+
+  // Remove a referral (full CRUD delete) — clears the referee and its credit.
+  async clearCustomerReferee(
+    id: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    const customer = (await this.getCustomers()).find((c) => c.id === id);
+    const { error } = await this.updateCustomer(id, {
+      referee_number: "",
+      credit_status: "pending",
+    });
+    if (error) return { success: false, error };
+    await this.addLog(
+      "Referrer Credit Removed",
+      "Admin",
+      this.currentUser?.email || "unknown",
+      `Removed referral record for ${customer?.name || id}.`,
+    );
+    return { success: true, error: null };
+  }
+
+  async deleteCustomer(
+    id: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    const customer = (await this.getCustomers()).find((c) => c.id === id);
+    try {
+      const { error } = await getSupabase()
+        .from("customers")
+        .delete()
+        .eq("id", id);
+      if (error) return { success: false, error: error.message };
+
+      await this.addLog(
+        "Customer QR Revoked",
+        "Admin",
+        this.currentUser?.email || "unknown",
+        `Deleted customer card: ${customer?.name || id} (Code: ${customer?.qr_code || id})`,
+      );
+      return { success: true, error: null };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Delete failed" };
+    }
+  }
+
+  async getCustomerByQRCode(qrCode: string): Promise<Customer | null> {
+    try {
+      const { data, error } = await getSupabase()
+        .from("customers")
+        .select("*")
+        .ilike("qr_code", qrCode)
+        .maybeSingle();
+      if (!error && data) {
+        // The server matches substrings — only accept the exact card code
+        // so a partial scan can never resolve to the wrong member.
+        if (
+          (data as Customer).qr_code?.toLowerCase() !== qrCode.trim().toLowerCase()
+        ) {
+          return null;
+        }
+        const customer = await this.reconcileCustomerStatus(data as Customer);
+        await this.addLog(
+          "QR Code Scanned",
+          "System",
+          "scanner",
+          `Scan completed successfully for ${customer.name}.`,
+        );
+        return customer;
+      }
+    } catch (e) {
+      console.warn("Supabase customer scan fetch failed:", e);
+    }
+    return null;
+  }
+
+  async getSales(): Promise<Sale[]> {
+    try {
+      const { data, error } = await getSupabase()
+        .from("sales")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error && data) return data as Sale[];
+    } catch (e) {
+      console.warn("Supabase sales fetch failed:", e);
+    }
+    return [];
+  }
+
+  async createSale(
+    shopId: string,
+    customerName: string,
+    amountBefore: number,
+    customerId?: string,
+  ): Promise<{ sale: Sale | null; error: string | null }> {
+    const shopList = await this.getShops();
+    const shop = shopList.find((s) => s.id === shopId);
+    if (!shop) {
+      return { sale: null, error: "Registered shop not found." };
+    }
+
+    const discountPercent = shop.discount_percent;
+    const discountApplied = Math.round((amountBefore * discountPercent) / 100);
+    const finalAmount = amountBefore - discountApplied;
+
+    let finalCustomerId = customerId;
+    if (!finalCustomerId) {
+      const custs = await this.getCustomers();
+      const match = custs.find(
+        (c) => c.name.toLowerCase() === customerName.toLowerCase(),
+      );
+      if (match) {
+        finalCustomerId = match.id;
+      }
+    }
+
+    const newSale: Sale = {
+      id: "sale-" + Date.now(),
+      shop_id: shopId,
+      customer_id: finalCustomerId,
+      shop_name: shop.shop_name,
+      customer_name: customerName,
+      amount_before_discount: amountBefore,
+      discount_percent: discountPercent,
+      discount_applied: discountApplied,
+      final_amount: finalAmount,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await getSupabase().from("sales").insert([newSale]);
+      if (error) return { sale: null, error: error.message };
+    } catch (e: any) {
+      return { sale: null, error: e?.message || "Insert failed" };
+    }
+
+    await this.addLog(
+      "Transaction Recorded",
+      "Shop",
+      shop.email,
+      `Recorded discount transaction for ${customerName}. Amount: ${amountBefore} RWF, Saved: ${discountApplied} RWF.`,
+    );
+    return { sale: newSale, error: null };
+  }
+
+  async getAuditLogs(): Promise<AuditLog[]> {
+    try {
+      const { data, error } = await getSupabase()
+        .from("audit_logs")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error && data) return data as AuditLog[];
+    } catch (e) {
+      console.warn("Supabase logs fetch failed:", e);
+    }
+    return [];
+  }
+
+  async addLog(
+    action: string,
+    role: "Admin" | "Shop" | "System",
+    email: string,
+    details: string,
+  ) {
+    const newLog: AuditLog = {
+      id: "log-" + Date.now(),
+      action,
+      user_role: role,
+      user_email: email,
+      details,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      await getSupabase().from("audit_logs").insert([newLog]);
+    } catch (e) {
+      console.warn("Audit log insert failed:", e);
+    }
+  }
+
+  async getCustomization(): Promise<Customization> {
+    try {
+      const { data, error } = await getSupabase()
+        .from("customization")
+        .select("*")
+        .maybeSingle();
+      if (!error && data) return data as Customization;
+    } catch (e) {
+      console.warn("Supabase customization query failed:", e);
+    }
+    return SEED_CUSTOMIZATION;
+  }
+
+  async updateCustomization(
+    updates: Partial<Customization>,
+  ): Promise<Customization> {
+    const current = await this.getCustomization();
+    const updated = { ...current, ...updates };
+
+    try {
+      await getSupabase()
+        .from("customization")
+        .upsert([{ id: "global-config", ...updated }]);
+    } catch (e) {
+      console.warn("Supabase customization save failed:", e);
+    }
+
+    await this.addLog(
+      "Theme Settings Updated",
+      "Admin",
+      this.currentUser?.email || "unknown",
+      `Updated global app styling to: Title: "${updated.title}", Theme: "${updated.theme_color}".`,
+    );
+    return updated;
+  }
+
+  async login(
+    email: string,
+    password: string,
+  ): Promise<{
+    user: AuthUser | null;
+    error: string | null;
+    code?: "EMAIL_NOT_VERIFIED" | "ACCOUNT_PENDING" | "ACCOUNT_REJECTED" | null;
+    userType?: "admin" | "shop" | null;
+  }> {
+    const lowerEmail = email.toLowerCase().trim();
+    if (!lowerEmail || !password) {
+      return { user: null, error: "Email and password are required." };
+    }
+
+    // Delegate authentication to the server's session-based login endpoint.
+    // The server validates credentials, creates a session token, and returns it.
+    // The ApiClient stores the token automatically for all subsequent requests.
+    const { data, error } = await getSupabase().login(lowerEmail, password);
+
+    if (error) {
+      const errData = error as any;
+      return {
+        user: null,
+        error: errData.error || "Login failed. Please try again.",
+        code: errData.code || null,
+        userType: errData.userType || null,
+      };
+    }
+
+    if (!data || !data.user) {
+      return { user: null, error: "Login failed. No user data returned." };
+    }
+
+    const user: AuthUser = {
+      id: data.user.id,
+      name: data.user.name,
+      email: data.user.email,
+      role: data.user.role,
+      shop_id: data.user.shop_id,
+      admin_role: data.user.admin_role,
+    };
+    this.currentUser = user;
+    return { user, error: null };
+  }
+
+  async signUpAdmin(
+    name: string,
+    email: string,
+    pass: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    // Use the server's public registration endpoint (no auth required)
+    const API_BASE = import.meta.env.VITE_API_URL || "";
+    try {
+      const res = await fetch(`${API_BASE}/api/db/auth/register-admin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email: email.toLowerCase().trim(), password: pass }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { success: false, error: body.error || "Registration failed." };
+      return { success: true, error: null };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Registration failed." };
+    }
+  }
+
+  async resetAdminPassword(
+    email: string,
+    currentPass: string,
+    newPass: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    const cleanEmail = email.toLowerCase().trim();
+    const { data: admin, error: queryError } = await getSupabase()
+      .from("admins")
+      .select("*")
+      .ilike("email", cleanEmail)
+      .maybeSingle();
+
+    if (queryError) {
+      return {
+        success: false,
+        error: "Unable to access administrator accounts in Supabase. Verify the database and RLS policies.",
+      };
+    }
+
+    if (!admin) {
+      return { success: false, error: "Administrator email not found." };
+    }
+
+    if (admin.password !== currentPass) {
+      return { success: false, error: "Incorrect current password." };
+    }
+
+    const updateResult = await this.updateAdmin(admin.id, { password: newPass });
+    if (updateResult.error) {
+      return { success: false, error: updateResult.error };
+    }
+    await this.addLog(
+      "Admin Password Reset",
+      "Admin",
+      admin.email,
+      `Successfully updated profile password for admin: ${admin.name}.`,
+    );
+    return { success: true, error: null };
+  }
+
+  async requestPasswordReset(
+    email: string,
+  ): Promise<{ success: boolean; emailSent: boolean; error: string | null }> {
+    const cleanEmail = email.toLowerCase().trim();
+    // Use the server's public endpoint (no auth required)
+    const API_BASE = import.meta.env.VITE_API_URL || "";
+    try {
+      const res = await fetch(`${API_BASE}/api/db/auth/request-reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { success: false, emailSent: false, error: body.error || "Password reset request failed." };
+      return { success: true, emailSent: true, error: null };
+    } catch (e: any) {
+      return { success: false, emailSent: false, error: e?.message || "Password reset request failed." };
+    }
+  }
+
+  async verifyRecoveryAndReset(
+    email: string,
+    code: string,
+    newPass: string,
+  ): Promise<{ success: boolean; error: string | null }> {
+    const cleanEmail = email.toLowerCase().trim();
+    // Use the server's public endpoint (no auth required)
+    const API_BASE = import.meta.env.VITE_API_URL || "";
+    try {
+      const res = await fetch(`${API_BASE}/api/db/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail, code: code.trim(), newPassword: newPass }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { success: false, error: body.error || "Password reset failed." };
+      return { success: true, error: null };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Password reset failed." };
+    }
+  }
+
+  async logout(): Promise<void> {
+    const user = this.currentUser;
+    if (user) {
+      // Log the action BEFORE clearing auth (server still has the session)
+      await this.addLog(
+        `${user.role === "admin" ? "Admin" : "Shop"} Logout`,
+        user.role === "admin" ? "Admin" : "Shop",
+        user.email,
+        "Logged out successfully.",
+      );
+    }
+    // Call server to destroy the session and clear the stored token
+    await getSupabase().logout();
+    this.currentUser = null;
+  }
+
+  async testConnection(): Promise<{
+    connected: boolean;
+    status: "connected" | "fallback" | "invalid_keys" | "missing_tables";
+    message: string;
+    tables: {
+      admins: boolean;
+      shops: boolean;
+      customers: boolean;
+      sales: boolean;
+      audit_logs: boolean;
+      customization: boolean;
+      verification_codes: boolean;
+    };
+  }> {
+    const tableStatus = {
+      admins: false,
+      shops: false,
+      customers: false,
+      sales: false,
+      audit_logs: false,
+      customization: false,
+      verification_codes: false,
+    };
+
+    try {
+      const [adminsRes, shopsRes, customersRes, salesRes, logsRes, customRes, vcodesRes] =
+        await Promise.all([
+          getSupabase().from("admins").select("id").limit(1),
+          getSupabase().from("shops").select("id").limit(1),
+          getSupabase().from("customers").select("id").limit(1),
+          getSupabase().from("sales").select("id").limit(1),
+          getSupabase().from("audit_logs").select("id").limit(1),
+          getSupabase().from("customization").select("id").limit(1),
+          getSupabase().from("verification_codes").select("id").limit(1),
+        ]);
+
+      tableStatus.admins = !adminsRes.error;
+      tableStatus.shops = !shopsRes.error;
+      tableStatus.customers = !customersRes.error;
+      tableStatus.sales = !salesRes.error;
+      tableStatus.audit_logs = !logsRes.error;
+      tableStatus.customization = !customRes.error;
+      tableStatus.verification_codes = !vcodesRes.error;
+
+      const allOk = Object.values(tableStatus).every((v) => v);
+
+      if (allOk) {
+        return {
+          connected: true,
+          status: "connected",
+          message:
+            "Securely connected to Supabase Database. All tables active!",
+          tables: tableStatus,
+        };
+      } else {
+        const missing = Object.entries(tableStatus)
+          .filter(([_, exists]) => !exists)
+          .map(([name]) => name)
+          .join(", ");
+        return {
+          connected: true,
+          status: "missing_tables",
+          message: `Database API is active, but missing tables or failing access permissions: ${missing}. Run supabase-migration.sql (existing DB) or supabase-schema.sql (new DB) in your Supabase SQL editor, then npm run db:init.`,
+          tables: tableStatus,
+        };
+      }
+    } catch (err: any) {
+      console.error("Supabase connection diagnostics failed:", err);
+      return {
+        connected: false,
+        status: "invalid_keys",
+        message: `Failed to connect. Check your Supabase URL & Anon Key. Details: ${err?.message || err}`,
+        tables: tableStatus,
+      };
+    }
+  }
+
+  async seedDatabase(): Promise<{ success: boolean; error: string | null }> {
+    try {
+      await getSupabase()
+        .from("customization")
+        .upsert([{ id: "global-config", ...SEED_CUSTOMIZATION }]);
+
+      await getSupabase().from("admins").upsert(
+        [
+          {
+            id: "admin-1",
+            name: "Super Administrator",
+            email: "artdeje@mail.com",
+            password: "admin123",
+            role: "super_admin",
+            status: "active",
+            email_verified: true,
+          },
+        ],
+        { onConflict: "email" },
+      );
+
+      await getSupabase()
+        .from("shops")
+        .upsert(
+          SEED_SHOPS.map((s) => ({ ...s, status: "approved", email_verified: true })),
+          { onConflict: "id" },
+        );
+
+      await getSupabase()
+        .from("customers")
+        .upsert(SEED_CUSTOMERS, { onConflict: "id" });
+
+      await this.addLog(
+        "Database Seeded",
+        "System",
+        "system",
+        "Successfully seeded all Supabase tables with default Rwanda mock datasets.",
+      );
+      return { success: true, error: null };
+    } catch (err: any) {
+      console.error("Seeding failure:", err);
+      return {
+        success: false,
+        error: err?.message || "Error occurred during database seeding.",
+      };
+    }
+  }
+}
+
+export const db = new SupabaseDatabaseService();

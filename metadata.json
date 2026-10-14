@@ -1,0 +1,6 @@
+{
+  "name": "Mi Advantage",
+  "description": "QR Card Scan & Shop Discount Management System",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+/* Class-based dark mode (toggled via <html class="dark">) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@keyframes scan-laser {
+  0%, 100% {
+    top: 10%;
+  }
+  50% {
+    top: 90%;
+  }
+}
+
+.animate-scan-laser {
+  animation: scan-laser 3s infinite ease-in-out;
+}
+
+/* Partner-shop marquee: slides the strip across the top of the guest panel */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 25s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Join-page partner carousel: snap scrolling without visible scrollbars */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Dark theme: native controls, scrollbars, and form widgets follow suit */
+.dark {
+  color-scheme: dark;
+}
+
+/* Guest receipt printing: only the receipt is printed */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #guest-receipt,
+  #guest-receipt * {
+    visibility: visible;
+  }
+  #guest-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100%;
+    border: none;
+    box-shadow: none;
+  }
+}
+
+/* html5-qrcode renders the camera <video> with inline width only (no height),
+   so it keeps its native 4:3 / 16:9 aspect and no longer fills the square
+   viewfinder. Force every scanner component to the exact square box size. */
+#shop-portal-scanner {
+  position: relative;
+  display: block;
+}
+#shop-portal-scanner video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block;
+}
+#shop-portal-scanner canvas {
+  display: none !important;
+}
+#shop-portal-scanner #qr-shaded-region {
+  width: 100% !important;
+  height: 100% !important;
+  box-sizing: border-box;
+}

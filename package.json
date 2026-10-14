@@ -1,0 +1,54 @@
+{
+  "name": "mi-advantage",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently --kill-others \"npm run api\" \"npm run email\" \"vite --port=3000 --host=0.0.0.0\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "node -e \"try{require('fs').rmSync('dist',{recursive:true,force:true})}catch(e){}\"",
+    "lint": "tsc --noEmit",
+    "db:init": "tsx scripts/db-init.ts",
+    "email": "tsx server/email-server.ts",
+    "api": "tsx server/api-server.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.5",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "html5-qrcode": "^2.3.8",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "mysql2": "^3.23.3",
+    "nodemailer": "^9.0.5",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-router-dom": "^7.18.2",
+    "recharts": "^3.9.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/nodemailer": "^8.0.1",
+    "@types/react-router-dom": "^5.3.3",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.5",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
+  },
+  "allowScripts": {
+    "core-js@3.50.0": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.1": true,
+    "protobufjs@7.6.5": true
+  }
+}
