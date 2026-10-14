@@ -1,0 +1,46 @@
+# Render Blueprint — one Web Service hosts the React frontend + API + email.
+# Apply: `render blueprint launch` or connect the repo in the Render dashboard
+# (the dashboard reads this file and pre-fills Build / Start commands).
+#
+# IMPORTANT — database: Render has no MySQL/XAMPP. Provision a hosted MySQL
+# (Aiven, Railway, PlanetScale, …), then set the MYSQL_* env vars below in
+# the dashboard and seed once with:  npm run db:init
+services:
+  - type: web
+    name: mi-advantage
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node dist/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Frontend calls the SAME origin in production — keep both empty so
+      # fetch("/api/...") hits this service (no CORS, no extra config).
+      - key: VITE_API_URL
+        value: ""
+      - key: VITE_EMAIL_API_URL
+        value: ""
+      # --- Hosted MySQL (fill in from your provider) ---
+      - key: MYSQL_HOST
+        sync: false
+      - key: MYSQL_PORT
+        value: "3306"
+      - key: MYSQL_USER
+        sync: false
+      - key: MYSQL_PASSWORD
+        sync: false
+      - key: MYSQL_DATABASE
+        value: mi_advantage
+      # --- Gmail SMTP (App Password, no spaces) ---
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false

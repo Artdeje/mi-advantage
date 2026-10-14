@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently --kill-others \"npm run api\" \"npm run email\" \"vite --port=3000 --host=0.0.0.0\"",
-    "build": "vite build",
+    "build": "vite build && npm run build:server",
+    "build:server": "node scripts/build-server.mjs",
     "preview": "vite preview",
     "start": "node dist/server.js",
     "clean": "node -e \"try{require('fs').rmSync('dist',{recursive:true,force:true})}catch(e){}\"",

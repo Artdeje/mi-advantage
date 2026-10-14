@@ -25,17 +25,34 @@ Prerequisites: Node.js 20+, MySQL (XAMPP) running.
 - `npm run email` — SMTP email server only (`server/email-server.ts`, port `EMAIL_SERVER_PORT` / 3001)
 - `npm run db:init` — MySQL schema + seed via `mysql-schema.sql`
 - `npm run lint` — `tsc --noEmit`
-- `npm run build` — production Vite build
+- `npm run build` — production build: Vite frontend + bundled API server (`dist/server.js`)
+- `npm run build:server` — bundle `server/api-server.ts` → `dist/server.js` only
+- `npm start` — run the production single-service bundle (frontend + API + email)
 - `npm run preview` — preview production build
 
 ## Environment
 
 See `.env.example` for all variables:
 
-- `VITE_API_URL`, `VITE_EMAIL_API_URL` — leave empty in dev (Vite proxy), set explicit URLs in production
+- `VITE_API_URL`, `VITE_EMAIL_API_URL` — leave empty in dev (Vite proxy) and on
+  single-service production (same-origin `/api/...`). Only set explicit URLs if
+  the API lives on a different host.
 - `MYSQL_HOST/PORT/USER/PASSWORD/DATABASE`, `API_SERVER_PORT`, `EMAIL_SERVER_PORT`
 - `SMTP_HOST/PORT/USER/PASS/FROM_EMAIL` — Gmail app password
 - `APP_URL` — public URL of the app
+- `PORT` — respected first by the server (Render injects it); falls back to `API_SERVER_PORT`/3002 locally
+
+## Deploy on Render (single Web Service)
+
+`render.yaml` pre-fills everything. One service hosts the React app + API + email:
+
+1. Provision a hosted MySQL (Aiven / Railway / PlanetScale — Render has no MySQL),
+   then set `MYSQL_*` env vars in the Render dashboard.
+2. Set `SMTP_*` env vars (Gmail App Password, no spaces).
+3. Build Command: `npm install && npm run build` — Start Command: `node dist/server.js`.
+4. Seed once after deploy: `npm run db:init` (with the production `MYSQL_*` in your
+   local `.env`), or POST to `/api/db/seed` once the service is up.
+5. Health check: `GET /api/health`.
 
 ## Default credentials (change in production!)
 

@@ -2,6 +2,9 @@ import "dotenv/config";
 import express from "express";
 import mysql from "mysql2/promise";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
+import path from "path";
+import fs from "fs";
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
@@ -150,6 +153,10 @@ declare global {
 }
 
 function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  // Non-API traffic (the React frontend, assets) never needs a session token.
+  // Without this bypass, GET / hits this middleware and returns the
+  // "Authentication required" 401 instead of the welcome page.
+  if (!req.path.startsWith("/api/")) { next(); return; }
   // Allow public paths
   if (PUBLIC_PATHS.has(req.path)) { next(); return; }
   // Allow all auth-related routes (prefix match)
@@ -168,6 +175,10 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   if (req.method === "POST" && req.path === "/api/db/sales") { next(); return; }
   // Allow unauthenticated GET to audit_logs (for CustomerPortal scan logging)
   if (req.method === "POST" && req.path === "/api/db/audit_logs") { next(); return; }
+  // Email delivery + health (merged from email-server.ts so a single
+  // production process serves everything; rate-limited + validated below)
+  if (req.method === "POST" && req.path === "/api/send-email") { next(); return; }
+  if (req.method === "GET" && req.path === "/api/health") { next(); return; }
 
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -865,6 +876,117 @@ app.delete("/api/db/:table/:id", async (req, res) => {
 });
 
 // ==========================================
+// EMAIL (merged from email-server.ts)
+// A single production process (Render) can only expose ONE port, so the
+// API server also handles /api/send-email + /api/health. Local dev may
+// still run server/email-server.ts separately — same contract.
+// ==========================================
+
+const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = (process.env.SMTP_PASS || "").replace(/\s+/g, "");
+const SMTP_FROM = process.env.SMTP_FROM_EMAIL || SMTP_USER;
+
+const transporter = nodemailer.createTransport({
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  secure: SMTP_PORT === 465,
+  auth: { user: SMTP_USER, pass: SMTP_PASS },
+});
+
+const emailRateLimit = new Map<string, number[]>();
+const EMAIL_RATE_MAX = 30;
+const EMAIL_RATE_WINDOW_MS = 60 * 1000;
+
+function isEmailRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const hits = (emailRateLimit.get(ip) || []).filter((t) => now - t < EMAIL_RATE_WINDOW_MS);
+  hits.push(now);
+  emailRateLimit.set(ip, hits);
+  return hits.length > EMAIL_RATE_MAX;
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+app.get("/api/health", async (_req, res) => {
+  if (!SMTP_USER || !SMTP_PASS) {
+    res.json({ ok: true, smtp: false, error: "SMTP credentials not configured in .env" });
+    return;
+  }
+  try {
+    await transporter.verify();
+    res.json({ ok: true, smtp: true, from: SMTP_FROM });
+  } catch (err: any) {
+    res.json({ ok: true, smtp: false, error: err?.message || "SMTP verification failed" });
+  }
+});
+
+app.post("/api/send-email", async (req, res) => {
+  const { to, subject, html } = req.body || {};
+  if (!to || !subject || !html) {
+    res.status(400).json({ success: false, error: "Missing to, subject or html." });
+    return;
+  }
+  if (typeof to !== "string" || !isValidEmail(to)) {
+    res.status(400).json({ success: false, error: "Invalid recipient email address." });
+    return;
+  }
+  if (typeof subject !== "string" || subject.length === 0 || subject.length > 200) {
+    res.status(400).json({ success: false, error: "Invalid subject (1-200 chars)." });
+    return;
+  }
+  if (typeof html !== "string" || html.length === 0 || html.length > 50000) {
+    res.status(400).json({ success: false, error: "Invalid email body (1-50000 chars)." });
+    return;
+  }
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  if (isEmailRateLimited(clientIp)) {
+    res.status(429).json({ success: false, error: "Too many email requests. Please try again later." });
+    return;
+  }
+  if (!SMTP_USER || !SMTP_PASS) {
+    res.status(500).json({ success: false, error: "SMTP credentials not configured." });
+    return;
+  }
+  try {
+    await transporter.sendMail({
+      from: `"Mi Advantage" <${SMTP_FROM}>`,
+      to,
+      subject,
+      html,
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Email send failure:", err);
+    res.status(500).json({ success: false, error: err?.message || "Failed to send email" });
+  }
+});
+
+// ==========================================
+// STATIC FRONTEND (production single-service)
+// Serves the Vite build (dist/) so one Render Web Service hosts both the
+// React app and the API. Unknown /api/* paths stay JSON 404s; every other
+// unmatched GET falls back to index.html (HashRouter resolves the route).
+// ==========================================
+
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+const DIST_DIR = path.join(process.cwd(), "dist");
+if (fs.existsSync(path.join(DIST_DIR, "index.html"))) {
+  app.use(express.static(DIST_DIR));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(DIST_DIR, "index.html"));
+  });
+} else {
+  console.warn("Frontend dist/ not found — API-only mode. Run: npm run build");
+}
+
+// ==========================================
 // GLOBAL ERROR HANDLING — never crash on DB failures
 // ==========================================
 
@@ -887,7 +1009,8 @@ process.on("uncaughtException", (err: any) => {
 // START
 // ==========================================
 
-const PORT = Number(process.env.API_SERVER_PORT || 3002);
+// Render (and most hosts) inject PORT — it must win over the local dev ports.
+const PORT = Number(process.env.PORT || process.env.API_SERVER_PORT || 3002);
 const server = app.listen(PORT, async () => {
   console.log(`Mi Advantage API server running on http://localhost:${PORT}`);
   console.log(`MySQL: ${DB_HOST}:${DB_PORT}/${DB_NAME} as ${DB_USER}`);
