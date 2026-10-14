@@ -2,9 +2,14 @@
 # Apply: `render blueprint launch` or connect the repo in the Render dashboard
 # (the dashboard reads this file and pre-fills Build / Start commands).
 #
-# IMPORTANT — database: Render has no MySQL/XAMPP. Provision a hosted MySQL
-# (Aiven, Railway, PlanetScale, …), then set the MYSQL_* env vars below in
-# the dashboard and seed once with:  npm run db:init
+# DATABASE — Supabase (Postgres). Before first deploy:
+#   1. Create a project at https://supabase.com/dashboard
+#   2. Run supabase-schema.sql once in the Supabase Dashboard → SQL Editor
+#   3. Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY below (dashboard env vars).
+#      Use the "secret" service_role key — NEVER the anon key, and never in VITE_*.
+# Existing MySQL data? Start local MySQL (XAMPP) and run once:
+#   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run db:seed-supabase
+# Fresh database? The app seeds defaults itself: POST /api/db/seed once online.
 services:
   - type: web
     name: mi-advantage
@@ -22,17 +27,11 @@ services:
         value: ""
       - key: VITE_EMAIL_API_URL
         value: ""
-      # --- Hosted MySQL (fill in from your provider) ---
-      - key: MYSQL_HOST
+      # --- Supabase (Project Settings → API; service_role = secret key) ---
+      - key: SUPABASE_URL
         sync: false
-      - key: MYSQL_PORT
-        value: "3306"
-      - key: MYSQL_USER
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: MYSQL_PASSWORD
-        sync: false
-      - key: MYSQL_DATABASE
-        value: mi_advantage
       # --- Gmail SMTP (App Password, no spaces) ---
       - key: SMTP_HOST
         value: smtp.gmail.com

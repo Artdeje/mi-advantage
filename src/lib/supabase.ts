@@ -518,7 +518,7 @@ export class SupabaseDatabaseService {
           return {
             fixed,
             error: error.includes("column")
-              ? "Database needs the shop QR migration: run mysql-migration-shop-qr.sql, then retry."
+              ? "Database needs the shop QR column: run supabase-schema.sql in the Supabase SQL Editor, then retry."
               : error,
           };
         }
@@ -570,9 +570,9 @@ export class SupabaseDatabaseService {
       if (error) {
         return {
           product: null,
-          error: error.message.includes("products")
-            ? "Database needs the products migration: run mysql-migration-products.sql, then retry."
-            : error.message,
+            error: error.message.includes("products")
+              ? "Database needs the products table: run supabase-schema.sql in the Supabase SQL Editor, then retry."
+              : error.message,
         };
       }
     } catch (e: any) {

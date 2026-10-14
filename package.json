@@ -12,6 +12,7 @@
     "clean": "node -e \"try{require('fs').rmSync('dist',{recursive:true,force:true})}catch(e){}\"",
     "lint": "tsc --noEmit",
     "db:init": "tsx scripts/db-init.ts",
+    "db:seed-supabase": "tsx scripts/seed-mysql-to-supabase.ts",
     "email": "tsx server/email-server.ts",
     "api": "tsx server/api-server.ts"
   },

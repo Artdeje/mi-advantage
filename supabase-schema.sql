@@ -1,42 +1,52 @@
 -- =========================================================
--- SUPABASE SCHEMAS & INITIAL SEED FOR MI ADVANTAGE DISCOUNT APP
--- Execute this SQL script in your Supabase SQL Editor
+-- SUPABASE (POSTGRES) SCHEMA & SEED FOR MI ADVANTAGE
+-- Run once in the Supabase Dashboard → SQL Editor (or via psql).
+-- This replaces mysql-schema.sql + all mysql-migration-*.sql files:
+-- every column from every migration is already included below.
+--
+-- Access model: Row Level Security is ENABLED on all tables with NO
+-- public policies — only the service_role key (used by server/api-server.ts)
+-- can read/write. The anon key cannot touch app data. Never expose the
+-- service_role key in the browser (VITE_*); set it as SUPABASE_SERVICE_ROLE_KEY
+-- on the server (Render env vars) only.
 -- =========================================================
 
--- 1. ADMINS TABLE (role: super_admin manages admins; admin cannot self-register)
-CREATE TABLE IF NOT EXISTS public.admins (
-    id TEXT PRIMARY KEY DEFAULT ('admin-' || extract(epoch from now())::bigint),
+-- 1. ADMINS TABLE
+CREATE TABLE IF NOT EXISTS admins (
+    id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
+    email TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'admin',
     status TEXT NOT NULL DEFAULT 'active',
     email_verified BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. SHOPS TABLE (self-registered shops start as pending until admin approves)
-CREATE TABLE IF NOT EXISTS public.shops (
-    id TEXT PRIMARY KEY DEFAULT ('shop-' || extract(epoch from now())::bigint),
+-- 2. SHOPS TABLE (includes qr_code + description from later migrations)
+CREATE TABLE IF NOT EXISTS shops (
+    id TEXT PRIMARY KEY,
     shop_name TEXT NOT NULL,
-    discount_percent INTEGER NOT NULL DEFAULT 10 CHECK (discount_percent >= 0 AND discount_percent <= 100),
-    email TEXT UNIQUE NOT NULL,
+    discount_percent INTEGER NOT NULL DEFAULT 10,
+    email TEXT NOT NULL UNIQUE,
     password TEXT,
     profile_picture TEXT,
+    qr_code TEXT UNIQUE,
+    description TEXT DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending',
     contract TEXT,
     rdb_certificate TEXT,
     email_verified BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. CUSTOMERS TABLE
-CREATE TABLE IF NOT EXISTS public.customers (
-    id TEXT PRIMARY KEY DEFAULT ('cust-' || extract(epoch from now())::bigint),
+-- 3. CUSTOMERS TABLE (email nullable + subscription_status included)
+CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE,
     phone TEXT NOT NULL,
-    qr_code TEXT UNIQUE NOT NULL,
+    qr_code TEXT NOT NULL UNIQUE,
     valid_until DATE,
     customer_type TEXT NOT NULL DEFAULT 'other',
     student_id TEXT DEFAULT '',
@@ -44,69 +54,69 @@ CREATE TABLE IF NOT EXISTS public.customers (
     referee_number TEXT DEFAULT '',
     card_status TEXT NOT NULL DEFAULT 'active',
     credit_status TEXT NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMPTZ DEFAULT now()
+    subscription_status TEXT NOT NULL DEFAULT 'unpaid',
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Migration: add customer profile columns if upgrading existing DB
-DO $$
-BEGIN
-    ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS customer_type TEXT NOT NULL DEFAULT 'other';
-    ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS student_id TEXT DEFAULT '';
-    ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS university TEXT DEFAULT '';
-    ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS referee_number TEXT DEFAULT '';
-    ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS card_status TEXT NOT NULL DEFAULT 'active';
-    ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS credit_status TEXT NOT NULL DEFAULT 'pending';
-EXCEPTION
-    WHEN duplicate_column THEN NULL;
-END $$;
+-- 4. PRODUCTS TABLE (per-shop menu catalog)
+CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY,
+    shop_id TEXT REFERENCES shops(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    price NUMERIC(12,2) NOT NULL DEFAULT 0,
+    stock INTEGER NOT NULL DEFAULT 0,
+    description TEXT DEFAULT '',
+    image_url TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- 4. SALES / TRANSACTIONS TABLE (With explicit foreign keys relating to both shops and customers)
-CREATE TABLE IF NOT EXISTS public.sales (
-    id TEXT PRIMARY KEY DEFAULT ('sale-' || extract(epoch from now())::bigint),
-    shop_id TEXT REFERENCES public.shops(id) ON UPDATE CASCADE ON DELETE SET NULL,
-    customer_id TEXT REFERENCES public.customers(id) ON UPDATE CASCADE ON DELETE SET NULL,
+CREATE INDEX IF NOT EXISTS idx_products_shop_id ON products(shop_id);
+
+-- 5. SALES TABLE
+CREATE TABLE IF NOT EXISTS sales (
+    id TEXT PRIMARY KEY,
+    shop_id TEXT REFERENCES shops(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    customer_id TEXT REFERENCES customers(id) ON UPDATE CASCADE ON DELETE SET NULL,
     shop_name TEXT NOT NULL,
     customer_name TEXT NOT NULL,
     amount_before_discount NUMERIC(12,2) NOT NULL,
-    discount_percent INTEGER NOT NULL CHECK (discount_percent >= 0 AND discount_percent <= 100),
+    discount_percent INTEGER NOT NULL,
     discount_applied NUMERIC(12,2) NOT NULL,
     final_amount NUMERIC(12,2) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes for faster FK lookups and date queries
-CREATE INDEX IF NOT EXISTS idx_sales_shop_id ON public.sales(shop_id);
-CREATE INDEX IF NOT EXISTS idx_sales_customer_id ON public.sales(customer_id);
-CREATE INDEX IF NOT EXISTS idx_sales_created_at ON public.sales(created_at);
+CREATE INDEX IF NOT EXISTS idx_sales_shop_id ON sales(shop_id);
+CREATE INDEX IF NOT EXISTS idx_sales_customer_id ON sales(customer_id);
+CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
 
--- 5. AUDIT LOGS TABLE
-CREATE TABLE IF NOT EXISTS public.audit_logs (
-    id TEXT PRIMARY KEY DEFAULT ('log-' || extract(epoch from now())::bigint),
+-- 6. AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY,
     action TEXT NOT NULL,
     user_role TEXT NOT NULL,
     user_email TEXT NOT NULL,
     details TEXT NOT NULL,
-    admin_id TEXT REFERENCES public.admins(id) ON UPDATE CASCADE ON DELETE SET NULL,
-    shop_id TEXT REFERENCES public.shops(id) ON UPDATE CASCADE ON DELETE SET NULL,
-    customer_id TEXT REFERENCES public.customers(id) ON UPDATE CASCADE ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT now()
+    admin_id TEXT REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    shop_id TEXT REFERENCES shops(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    customer_id TEXT REFERENCES customers(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_audit_logs_admin_id ON public.audit_logs(admin_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_shop_id ON public.audit_logs(shop_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_customer_id ON public.audit_logs(customer_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_admin_id ON audit_logs(admin_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_shop_id ON audit_logs(shop_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_customer_id ON audit_logs(customer_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 
--- 6. CUSTOMIZATION / BRANDING TABLE (Full CRUD branding)
-CREATE TABLE IF NOT EXISTS public.customization (
-    id TEXT PRIMARY KEY DEFAULT 'global-config',
-    -- Core branding
+-- 7. CUSTOMIZATION TABLE (singleton row id = 'global-config')
+CREATE TABLE IF NOT EXISTS customization (
+    id TEXT PRIMARY KEY,
     theme_color TEXT NOT NULL DEFAULT 'green',
     logo_url TEXT DEFAULT '',
     favicon_url TEXT DEFAULT '',
     title TEXT NOT NULL DEFAULT 'Mi Advantage QR Card Scan & Shop',
     subtitle TEXT DEFAULT 'Kigali Premium Privilege',
-    -- Colors
     primary_color TEXT DEFAULT '#059669',
     secondary_color TEXT DEFAULT '#0d9488',
     accent_color TEXT DEFAULT '#f59e0b',
@@ -115,148 +125,113 @@ CREATE TABLE IF NOT EXISTS public.customization (
     card_color TEXT DEFAULT '#ffffff',
     text_primary_color TEXT DEFAULT '#1e293b',
     text_secondary_color TEXT DEFAULT '#64748b',
-    -- Typography
     font_family TEXT DEFAULT 'Inter',
     heading_font TEXT DEFAULT 'Space Grotesk',
     base_font_size TEXT DEFAULT '14px',
-    -- Homepage content
     home_h1 TEXT DEFAULT 'Instant Merchant Discounts',
     home_h2 TEXT DEFAULT 'QR Member Advantage System',
     home_p TEXT DEFAULT 'Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges.',
-    -- Login & Signup
     login_heading TEXT DEFAULT 'Partner Shop Terminal',
     login_subtext TEXT DEFAULT 'Authorized Merchants Only',
     signup_heading TEXT DEFAULT 'Register Your Shop',
     signup_subtext TEXT DEFAULT 'Submit your business details for admin approval',
     login_background_type TEXT DEFAULT 'gradient',
     login_background_value TEXT DEFAULT 'linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)',
-    -- Footer
     footer_text TEXT DEFAULT '',
     footer_subtext TEXT DEFAULT '',
-    -- Email branding
     email_header_html TEXT DEFAULT '',
     email_footer_html TEXT DEFAULT '',
-    -- Custom CSS/JS
     custom_css TEXT DEFAULT '',
-    -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Migration: add new columns if upgrading existing DB
-DO $$
+-- Keep updated_at fresh on every UPDATE (replaces MySQL ON UPDATE CURRENT_TIMESTAMP)
+CREATE OR REPLACE FUNCTION touch_updated_at()
+RETURNS TRIGGER AS $$
 BEGIN
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS primary_color TEXT DEFAULT '#059669';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS secondary_color TEXT DEFAULT '#0d9488';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS accent_color TEXT DEFAULT '#f59e0b';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS background_color TEXT DEFAULT '#f8fafc';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS sidebar_color TEXT DEFAULT '#ffffff';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS card_color TEXT DEFAULT '#ffffff';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS text_primary_color TEXT DEFAULT '#1e293b';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS text_secondary_color TEXT DEFAULT '#64748b';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS font_family TEXT DEFAULT 'Inter';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS heading_font TEXT DEFAULT 'Space Grotesk';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS base_font_size TEXT DEFAULT '14px';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS login_background_type TEXT DEFAULT 'gradient';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS login_background_value TEXT DEFAULT 'linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS footer_text TEXT DEFAULT '';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS footer_subtext TEXT DEFAULT '';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS email_header_html TEXT DEFAULT '';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS email_footer_html TEXT DEFAULT '';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS custom_css TEXT DEFAULT '';
-    ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
-EXCEPTION
-    WHEN duplicate_column THEN NULL;
-END $$;
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- 7. VERIFICATION CODES TABLE (email verification + password reset codes)
-CREATE TABLE IF NOT EXISTS public.verification_codes (
-    id TEXT PRIMARY KEY DEFAULT ('vcode-' || extract(epoch from now())::bigint || '-' || floor(random()*1000)::int),
+DROP TRIGGER IF EXISTS trg_customization_updated_at ON customization;
+CREATE TRIGGER trg_customization_updated_at
+  BEFORE UPDATE ON customization
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- 8. VERIFICATION CODES TABLE
+CREATE TABLE IF NOT EXISTS verification_codes (
+    id TEXT PRIMARY KEY,
     email TEXT NOT NULL,
     code TEXT NOT NULL,
     purpose TEXT NOT NULL DEFAULT 'signup',
     user_type TEXT NOT NULL DEFAULT 'shop',
     expires_at TIMESTAMPTZ NOT NULL,
     used BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON public.verification_codes(email);
+CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
 
 -- =========================================================
--- ENABLE ROW LEVEL SECURITY (RLS) & ACCESS POLICIES
+-- ROW LEVEL SECURITY — locked down, service_role only.
+-- The API server authenticates with the service_role key, which
+-- bypasses RLS. No policies are created on purpose: the anon/public
+-- key gets zero access to app data.
 -- =========================================================
-ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.shops ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.customization ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.verification_codes ENABLE ROW LEVEL SECURITY;
-
--- Allow anonymous read & write for full dynamic functionality
-CREATE POLICY "Allow public select admins" ON public.admins FOR SELECT USING (true);
-CREATE POLICY "Allow public insert admins" ON public.admins FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update admins" ON public.admins FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete admins" ON public.admins FOR DELETE USING (true);
-
-CREATE POLICY "Allow public select shops" ON public.shops FOR SELECT USING (true);
-CREATE POLICY "Allow public insert shops" ON public.shops FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update shops" ON public.shops FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete shops" ON public.shops FOR DELETE USING (true);
-
-CREATE POLICY "Allow public select customers" ON public.customers FOR SELECT USING (true);
-CREATE POLICY "Allow public insert customers" ON public.customers FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update customers" ON public.customers FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete customers" ON public.customers FOR DELETE USING (true);
-
-CREATE POLICY "Allow public select sales" ON public.sales FOR SELECT USING (true);
-CREATE POLICY "Allow public insert sales" ON public.sales FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update sales" ON public.sales FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete sales" ON public.sales FOR DELETE USING (true);
-
-CREATE POLICY "Allow public select audit_logs" ON public.audit_logs FOR SELECT USING (true);
-CREATE POLICY "Allow public insert audit_logs" ON public.audit_logs FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Allow public select customization" ON public.customization FOR SELECT USING (true);
-CREATE POLICY "Allow public insert customization" ON public.customization FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update customization" ON public.customization FOR UPDATE USING (true);
-
-CREATE POLICY "Allow public select verification_codes" ON public.verification_codes FOR SELECT USING (true);
-CREATE POLICY "Allow public insert verification_codes" ON public.verification_codes FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update verification_codes" ON public.verification_codes FOR UPDATE USING (true);
+ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customization ENABLE ROW LEVEL SECURITY;
+ALTER TABLE verification_codes ENABLE ROW LEVEL SECURITY;
 
 -- =========================================================
--- INITIAL SEED DATA
+-- SEED DATA (idempotent — safe to re-run)
 -- =========================================================
-INSERT INTO public.admins (id, name, email, password, role, status, email_verified)
+
+INSERT INTO admins (id, name, email, password, role, status, email_verified)
 VALUES ('admin-1', 'Super Administrator', 'artdeje@mail.com', 'admin123', 'super_admin', 'active', true)
-ON CONFLICT (email) DO UPDATE SET role = 'super_admin', status = 'active', email_verified = true;
+ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.shops (id, shop_name, discount_percent, email, password, status, email_verified)
+INSERT INTO shops (id, shop_name, discount_percent, email, password, status, email_verified, qr_code)
 VALUES
-    ('shop-1', 'Kigali Fashion House', 12, 'kigalifashion@shop.com', 'shop123', 'approved', true),
-    ('shop-2', 'Simba Supermarket', 8, 'simba@shop.com', 'shop123', 'approved', true),
-    ('shop-3', 'Inzora Rooftop Cafe', 15, 'inzora@shop.com', 'shop123', 'approved', true),
-    ('shop-4', 'Gisenyi Beach Resort', 20, 'gisenyiresort@shop.com', 'shop123', 'approved', true)
+    ('shop-1', 'Kigali Fashion House', 12, 'kigalifashion@shop.com', 'shop123', 'approved', true, 'SHOP-1001'),
+    ('shop-2', 'Simba Supermarket', 8, 'simba@shop.com', 'shop123', 'approved', true, 'SHOP-1002'),
+    ('shop-3', 'Inzora Rooftop Cafe', 15, 'inzora@shop.com', 'shop123', 'approved', true, 'SHOP-1003'),
+    ('shop-4', 'Gisenyi Beach Resort', 20, 'gisenyiresort@shop.com', 'shop123', 'approved', true, 'SHOP-1004')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.customers (id, name, email, phone, qr_code, valid_until, customer_type, student_id, university, referee_number, card_status, credit_status)
-VALUES 
-    ('cust-1', 'Jean Luc Mutara', 'jeanluc@example.com', '+250788123456', 'CUST-9821', '2027-07-01', 'student', 'STU-2023-0451', 'University of Rwanda', '', 'active', 'pending'),
-    ('cust-2', 'Aline Uwase', 'aline@example.com', '+250788654321', 'CUST-1123', '2026-08-10', 'other', '', '', 'CUST-9821', 'renew', 'pending'),
-    ('cust-3', 'Eric Ndahiro', 'ericn@example.com', '+250789555666', 'CUST-4567', '2027-07-03', 'other', '', '', 'CUST-9821', 'active', 'pending'),
-    ('cust-4', 'Marie Claire Uwineza', 'claire@example.com', '+250782111222', 'CUST-3049', '2027-07-04', 'student', 'STU-2024-1187', 'Kigali Independent University', 'CUST-1123', 'active', 'pending'),
-    ('cust-5', 'Divine Karemera', 'divine@example.com', '+250783999888', 'CUST-8072', '2027-07-05', 'other', '', '', 'CUST-1123', 'active', 'pending')
+INSERT INTO customers (id, name, email, phone, qr_code, valid_until, customer_type, student_id, university, referee_number, card_status, credit_status, subscription_status)
+VALUES
+    ('cust-1', 'Jean Luc Mutara', 'jeanluc@example.com', '+250788123456', 'CUST-9821', '2027-07-01', 'student', 'STU-2023-0451', 'University of Rwanda', '', 'active', 'pending', 'paid'),
+    ('cust-2', 'Aline Uwase', 'aline@example.com', '+250788654321', 'CUST-1123', '2026-08-10', 'other', '', '', 'CUST-9821', 'renew', 'pending', 'paid'),
+    ('cust-3', 'Eric Ndahiro', 'ericn@example.com', '+250789555666', 'CUST-4567', '2027-07-03', 'other', '', '', 'CUST-9821', 'active', 'pending', 'paid'),
+    ('cust-4', 'Marie Claire Uwineza', 'claire@example.com', '+250782111222', 'CUST-3049', '2027-07-04', 'student', 'STU-2024-1187', 'Kigali Independent University', 'CUST-1123', 'active', 'pending', 'paid'),
+    ('cust-5', 'Divine Karemera', 'divine@example.com', '+250783999888', 'CUST-8072', '2027-07-05', 'other', '', '', 'CUST-1123', 'active', 'pending', 'paid')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.customization (id, theme_color, title, subtitle, home_h1, home_h2, home_p)
+INSERT INTO products (id, shop_id, name, price, stock, description, status)
+VALUES
+    ('prod-1', 'shop-1', 'Kitenge Dress', 25000, 20, 'Vibrant Ankara print dress, tailored fit.', 'active'),
+    ('prod-2', 'shop-1', 'Men Shirt', 18000, 35, 'Classic cotton shirt, all sizes.', 'active'),
+    ('prod-3', 'shop-2', 'Milk 1L', 2000, 100, 'Fresh whole milk 1 litre.', 'active'),
+    ('prod-4', 'shop-2', 'Bread 500g', 1500, 80, 'Daily baked brown bread.', 'active'),
+    ('prod-5', 'shop-3', 'Cappuccino', 3500, 50, 'Double-shot cappuccino with art.', 'active'),
+    ('prod-6', 'shop-4', 'Day Pass', 15000, 30, 'Full-day resort access with lunch.', 'active')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO customization (id, theme_color, title, subtitle, home_h1, home_h2, home_p)
 VALUES (
-    'global-config', 
-    'green', 
-    'Mi Advantage QR Card Scan & Shop', 
-    'Kigali Premium Privilege', 
-    'Instant Merchant Discounts', 
-    'QR Member Advantage System', 
+    'global-config',
+    'green',
+    'Mi Advantage QR Card Scan & Shop',
+    'Kigali Premium Privilege',
+    'Instant Merchant Discounts',
+    'QR Member Advantage System',
     'Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly.'
-) ON CONFLICT (id) DO NOTHING;
+)
+ON CONFLICT (id) DO NOTHING;

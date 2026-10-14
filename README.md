@@ -1,29 +1,30 @@
 # Mi Advantage — QR Card Scan & Shop Discount Management
 
 QR member-card discount system with Admin, Shop, and public Customer scan portals.
-Frontend: React 19 + Vite 6 + Tailwind 4. Backend: Express + MySQL (XAMPP) + Nodemailer SMTP.
+Frontend: React 19 + Vite 6 + Tailwind 4. Backend: Express + Supabase (Postgres) + Nodemailer SMTP.
 
 ## Quick start
 
-Prerequisites: Node.js 20+, MySQL (XAMPP) running.
+Prerequisites: Node.js 20+, a Supabase project.
 
 1. Install dependencies:
    `npm install`
 2. Copy env and configure:
    `copy .env.example .env` (Windows) or `cp .env.example .env`
-   Set `MYSQL_*`, `SMTP_*` in `.env`. Leave `VITE_API_URL=""` and
+   Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_*` in `.env`. Leave `VITE_API_URL=""` and
    `VITE_EMAIL_API_URL=""` empty for Vite dev proxy.
-3. Init database (creates `mi_advantage` + seeds from `mysql-schema.sql`):
-   `npm run db:init`
+3. Create tables + seed (run once in Supabase Dashboard → SQL Editor):
+   `supabase-schema.sql`
 4. Run all (API :3002 + email :3001 + Vite :3000):
    `npm run dev`
 
 ## Scripts
 
 - `npm run dev` — API + email + Vite concurrently
-- `npm run api` — MySQL API server only (`server/api-server.ts`, port `API_SERVER_PORT` / 3002)
+- `npm run api` — Supabase API server only (`server/api-server.ts`, port `API_SERVER_PORT` / 3002)
 - `npm run email` — SMTP email server only (`server/email-server.ts`, port `EMAIL_SERVER_PORT` / 3001)
-- `npm run db:init` — MySQL schema + seed via `mysql-schema.sql`
+- `npm run db:seed-supabase` — one-off MySQL → Supabase data migration (needs local MySQL up + `SUPABASE_*` set)
+- `npm run db:init` — legacy local MySQL schema + seed via `mysql-schema.sql` (only for MySQL dev)
 - `npm run lint` — `tsc --noEmit`
 - `npm run build` — production build: Vite frontend + bundled API server (`dist/server.js`)
 - `npm run build:server` — bundle `server/api-server.ts` → `dist/server.js` only
@@ -37,7 +38,10 @@ See `.env.example` for all variables:
 - `VITE_API_URL`, `VITE_EMAIL_API_URL` — leave empty in dev (Vite proxy) and on
   single-service production (same-origin `/api/...`). Only set explicit URLs if
   the API lives on a different host.
-- `MYSQL_HOST/PORT/USER/PASSWORD/DATABASE`, `API_SERVER_PORT`, `EMAIL_SERVER_PORT`
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — Supabase project URL + **secret**
+  service_role key (server only; never put any key in `VITE_*`)
+- `MYSQL_HOST/PORT/USER/PASSWORD/DATABASE` — only for the one-off MySQL → Supabase migration
+- `API_SERVER_PORT`, `EMAIL_SERVER_PORT`
 - `SMTP_HOST/PORT/USER/PASS/FROM_EMAIL` — Gmail app password
 - `APP_URL` — public URL of the app
 - `PORT` — respected first by the server (Render injects it); falls back to `API_SERVER_PORT`/3002 locally
@@ -46,13 +50,16 @@ See `.env.example` for all variables:
 
 `render.yaml` pre-fills everything. One service hosts the React app + API + email:
 
-1. Provision a hosted MySQL (Aiven / Railway / PlanetScale — Render has no MySQL),
-   then set `MYSQL_*` env vars in the Render dashboard.
-2. Set `SMTP_*` env vars (Gmail App Password, no spaces).
-3. Build Command: `npm install && npm run build` — Start Command: `node dist/server.js`.
-4. Seed once after deploy: `npm run db:init` (with the production `MYSQL_*` in your
-   local `.env`), or POST to `/api/db/seed` once the service is up.
-5. Health check: `GET /api/health`.
+1. Create a project at https://supabase.com/dashboard.
+2. Run `supabase-schema.sql` once in the Supabase Dashboard → SQL Editor
+   (creates all 8 tables + seed, RLS locked to service_role).
+3. Set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` env vars in the Render dashboard.
+4. Set `SMTP_*` env vars (Gmail App Password, no spaces).
+5. Build Command: `npm install && npm run build` — Start Command: `node dist/server.js`.
+6. Seed once after deploy — either carry over MySQL data (start local MySQL, then
+   `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run db:seed-supabase`)
+   or POST to `/api/db/seed` once the service is up for default demo data.
+7. Health check: `GET /api/health`.
 
 ## Default credentials (change in production!)
 

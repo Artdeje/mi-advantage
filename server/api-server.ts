@@ -1,10 +1,17 @@
 import "dotenv/config";
 import express from "express";
-import mysql from "mysql2/promise";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import path from "path";
 import fs from "fs";
+import {
+  getDb,
+  sendDbError,
+  dbErrorMessage,
+  coerceNumerics,
+  escapeLike,
+  uid,
+} from "./db";
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
@@ -18,26 +25,11 @@ app.use((_req, res, next) => {
 });
 
 // ==========================================
-// DATABASE
+// DATABASE — Supabase (Postgres) via service_role.
+// Schema + seed live in supabase-schema.sql (run once in the Supabase
+// SQL Editor). The API server is the only data accessor; the browser
+// never sees a Supabase key. API contract is unchanged from MySQL days.
 // ==========================================
-
-const DB_HOST = process.env.MYSQL_HOST || "localhost";
-const DB_PORT = Number(process.env.MYSQL_PORT || 3306);
-const DB_USER = process.env.MYSQL_USER || "root";
-const DB_PASS = process.env.MYSQL_PASSWORD || "";
-const DB_NAME = process.env.MYSQL_DATABASE || "mi_advantage";
-
-const pool = mysql.createPool({
-  host: DB_HOST, port: DB_PORT, user: DB_USER, password: DB_PASS,
-  database: DB_NAME, waitForConnections: true, connectionLimit: 10, charset: "utf8mb4",
-  typeCast(field, next) {
-    if (field.type === "TINY" && field.length === 1) return field.string() === "1";
-    if (field.type === "DECIMAL" || field.type === "NEWDECIMAL") {
-      const v = field.string(); return v ? Number(v) : 0;
-    }
-    return next();
-  },
-});
 
 const ALLOWED_TABLES = new Set([
   "admins", "shops", "customers", "sales", "products",
@@ -49,41 +41,6 @@ function validateTable(t: string) { return ALLOWED_TABLES.has(t); }
 // order/filter/data keys. Table names are already whitelisted above.
 function isSafeIdentifier(name: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
-}
-
-// Map low-level MySQL connection errors to a friendly message + status.
-// A down database must NEVER crash the server — callers return 503 JSON.
-function isDbConnectionError(err: any): boolean {
-  const code = err?.code || err?.errno;
-  return (
-    code === "ECONNREFUSED" ||
-    code === "ENOTFOUND" ||
-    code === "ETIMEDOUT" ||
-    code === "EHOSTUNREACH" ||
-    code === "PROTOCOL_CONNECTION_LOST"
-  );
-}
-
-function dbErrorMessage(err: any): string {
-  if (isDbConnectionError(err)) {
-    return (
-      `Cannot reach MySQL at ${DB_HOST}:${DB_PORT}. ` +
-      "Start MySQL (XAMPP Control Panel → MySQL → Start), " +
-      "verify MYSQL_HOST/MYSQL_PORT in .env, then retry."
-    );
-  }
-  if (err?.code === "ER_ACCESS_DENIED_ERROR") {
-    return "MySQL access denied. Check MYSQL_USER / MYSQL_PASSWORD in .env.";
-  }
-  if (err?.code === "ER_BAD_DB_ERROR") {
-    return `MySQL database '${DB_NAME}' not found. Run: npm run db:init`;
-  }
-  return err?.message || "Database error.";
-}
-
-function sendDbError(res: express.Response, err: any) {
-  const status = isDbConnectionError(err) ? 503 : 500;
-  res.status(status).json({ error: dbErrorMessage(err) });
 }
 
 // ==========================================
@@ -208,10 +165,10 @@ app.post("/api/db/auth/login", async (req, res) => {
     const lowerEmail = String(email).toLowerCase().trim();
 
     // Check admins
-    const [adminRows] = await pool.query(
-      "SELECT * FROM admins WHERE LOWER(email) = ? LIMIT 1", [lowerEmail]
-    );
-    const admin = (adminRows as any[])[0];
+    const { data: adminRows, error: adminErr } = await getDb()
+      .from("admins").select("*").ilike("email", escapeLike(lowerEmail)).limit(1);
+    if (adminErr) throw adminErr;
+    const admin = (adminRows || [])[0];
     if (admin) {
       if (password !== admin.password) { res.status(401).json({ error: "Invalid password." }); return; }
       if (admin.status === "suspended") { res.status(403).json({ error: "Account suspended." }); return; }
@@ -225,10 +182,10 @@ app.post("/api/db/auth/login", async (req, res) => {
       });
       // Log login (best effort — never block login on audit failure)
       try {
-        await pool.query(
-          "INSERT INTO audit_logs (id, action, user_role, user_email, details, created_at) VALUES (?, ?, ?, ?, ?, NOW())",
-          [`log-${Date.now()}`, "Admin Login", "Admin", admin.email, `Admin ${admin.name} logged in.`]
-        );
+        await getDb().from("audit_logs").insert({
+          id: uid("log"), action: "Admin Login", user_role: "Admin",
+          user_email: admin.email, details: `Admin ${admin.name} logged in.`,
+        });
       } catch (logErr) { console.warn("Login audit log failed:", (logErr as any)?.message); }
       res.json({
         token: session.token,
@@ -238,10 +195,10 @@ app.post("/api/db/auth/login", async (req, res) => {
     }
 
     // Check shops
-    const [shopRows] = await pool.query(
-      "SELECT * FROM shops WHERE LOWER(email) = ? LIMIT 1", [lowerEmail]
-    );
-    const shop = (shopRows as any[])[0];
+    const { data: shopRows, error: shopErr } = await getDb()
+      .from("shops").select("*").ilike("email", escapeLike(lowerEmail)).limit(1);
+    if (shopErr) throw shopErr;
+    const shop = (shopRows || [])[0];
     if (shop) {
       if (!shop.password || password !== shop.password) { res.status(401).json({ error: "Invalid password." }); return; }
       if (shop.email_verified === false) {
@@ -261,10 +218,10 @@ app.post("/api/db/auth/login", async (req, res) => {
         name: shop.shop_name, shopId: shop.id,
       });
       try {
-        await pool.query(
-          "INSERT INTO audit_logs (id, action, user_role, user_email, details, created_at) VALUES (?, ?, ?, ?, ?, NOW())",
-          [`log-${Date.now()}`, "Shop Login", "Shop", shop.email, `Shop ${shop.shop_name} logged in.`]
-        );
+        await getDb().from("audit_logs").insert({
+          id: uid("log"), action: "Shop Login", user_role: "Shop",
+          user_email: shop.email, details: `Shop ${shop.shop_name} logged in.`,
+        });
       } catch (logErr) { console.warn("Login audit log failed:", (logErr as any)?.message); }
       res.json({
         token: session.token,
@@ -287,6 +244,15 @@ app.post("/api/db/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
+// Outbound email from auth flows. Uses this process's own SMTP transporter
+// (declared below) so single-service production (Render) needs no second
+// email process. Best effort — never blocks the auth flow.
+async function sendMailBestEffort(to: string, subject: string, html: string) {
+  try {
+    await transporter.sendMail({ from: `"Mi Advantage" <${SMTP_FROM}>`, to, subject, html });
+  } catch { /* email may not be configured */ }
+}
+
 // --- Public: Admin registration ---
 app.post("/api/db/auth/register-admin", async (req, res) => {
   try {
@@ -295,32 +261,28 @@ app.post("/api/db/auth/register-admin", async (req, res) => {
       res.status(400).json({ error: "Name, email, and password are required." }); return;
     }
     const lowerEmail = String(email).toLowerCase().trim();
-    const [existing] = await pool.query("SELECT id FROM admins WHERE LOWER(email) = ?", [lowerEmail]);
-    if ((existing as any[]).length > 0) {
+    const { data: existing, error: existingErr } = await getDb()
+      .from("admins").select("id").ilike("email", escapeLike(lowerEmail)).limit(1);
+    if (existingErr) throw existingErr;
+    if ((existing || []).length > 0) {
       res.status(409).json({ error: "An administrator with this email already exists!" }); return;
     }
-    const id = "admin-" + Date.now();
-    await pool.query(
-      "INSERT INTO admins (id, name, email, password, role, status, email_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-      [id, name, lowerEmail, password, "admin", "active", false]
-    );
+    const id = uid("admin");
+    const { error: insertErr } = await getDb().from("admins").insert({
+      id, name, email: lowerEmail, password, role: "admin", status: "active", email_verified: false,
+    });
+    if (insertErr) throw insertErr;
     // Generate and store verification code
     const code = "MA-" + Math.floor(100000 + Math.random() * 900000);
-    const vcId = "vcode-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+    const vcId = uid("vcode");
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    await pool.query(
-      "INSERT INTO verification_codes (id, email, code, purpose, user_type, expires_at, used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-      [vcId, lowerEmail, code, "signup", "admin", expiresAt, false]
-    );
-    // Send email (best effort) via the email server
-    try {
-      const EMAIL_PORT = process.env.EMAIL_SERVER_PORT || 3001;
-      await fetch(`http://localhost:${EMAIL_PORT}/api/send-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: lowerEmail, subject: "Verify your Mi Advantage account", html: `<p>Your verification code is: <strong>${code}</strong></p><p>Use this code to verify your email address and activate your account.</p><p>This code expires in 15 minutes.</p>` }),
-      });
-    } catch { /* email may not be configured */ }
+    const { error: vcErr } = await getDb().from("verification_codes").insert({
+      id: vcId, email: lowerEmail, code, purpose: "signup", user_type: "admin",
+      expires_at: expiresAt, used: false,
+    });
+    if (vcErr) throw vcErr;
+    // Send email (best effort) via this process's own transporter
+    await sendMailBestEffort(lowerEmail, "Verify your Mi Advantage account", `<p>Your verification code is: <strong>${code}</strong></p><p>Use this code to verify your email address and activate your account.</p><p>This code expires in 15 minutes.</p>`);
     res.json({ ok: true, message: "Account created. Check your email for the verification code." });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
@@ -334,11 +296,12 @@ app.post("/api/db/auth/verify-email", async (req, res) => {
     }
     const lowerEmail = String(email).toLowerCase().trim();
     const p = purpose || "signup";
-    const [rows] = await pool.query(
-      "SELECT * FROM verification_codes WHERE LOWER(email) = ? AND code = ? AND purpose = ? AND used = false ORDER BY created_at DESC LIMIT 1",
-      [lowerEmail, code.trim(), p]
-    );
-    const record = (rows as any[])[0];
+    const { data: rows, error: lookupErr } = await getDb()
+      .from("verification_codes").select("*")
+      .ilike("email", escapeLike(lowerEmail)).eq("code", code.trim()).eq("purpose", p).eq("used", false)
+      .order("created_at", { ascending: false }).limit(1);
+    if (lookupErr) throw lookupErr;
+    const record = (rows || [])[0];
     if (!record) {
       res.status(400).json({ error: "Invalid verification code." }); return;
     }
@@ -346,12 +309,16 @@ app.post("/api/db/auth/verify-email", async (req, res) => {
       res.status(400).json({ error: "Verification code expired. Request a new one." }); return;
     }
     // Mark code as used
-    await pool.query("UPDATE verification_codes SET used = true WHERE id = ?", [record.id]);
+    const { error: usedErr } = await getDb()
+      .from("verification_codes").update({ used: true }).eq("id", record.id);
+    if (usedErr) throw usedErr;
     // Mark email as verified
     if (p === "signup") {
       const table = record.user_type === "admin" ? "admins" : "shops";
       if (!validateTable(table)) { res.status(400).json({ error: "Invalid user type." }); return; }
-      await pool.query(`UPDATE \`${table}\` SET email_verified = true WHERE LOWER(email) = ?`, [lowerEmail]);
+      const { error: verifyErr } = await getDb()
+        .from(table).update({ email_verified: true }).ilike("email", escapeLike(lowerEmail));
+      if (verifyErr) throw verifyErr;
     }
     res.json({ ok: true, userType: record.user_type });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
@@ -364,29 +331,27 @@ app.post("/api/db/auth/request-reset", async (req, res) => {
     if (!email) { res.status(400).json({ error: "Email is required." }); return; }
     const lowerEmail = String(email).toLowerCase().trim();
     // Find the user in either table
-    const [admins] = await pool.query("SELECT id FROM admins WHERE LOWER(email) = ?", [lowerEmail]);
-    const [shops] = await pool.query("SELECT id FROM shops WHERE LOWER(email) = ?", [lowerEmail]);
-    const isAdmin = (admins as any[]).length > 0;
-    const isShop = (shops as any[]).length > 0;
+    const { data: admins, error: adminErr } = await getDb()
+      .from("admins").select("id").ilike("email", escapeLike(lowerEmail)).limit(1);
+    if (adminErr) throw adminErr;
+    const { data: shops, error: shopErr } = await getDb()
+      .from("shops").select("id").ilike("email", escapeLike(lowerEmail)).limit(1);
+    if (shopErr) throw shopErr;
+    const isAdmin = (admins || []).length > 0;
+    const isShop = (shops || []).length > 0;
     if (!isAdmin && !isShop) {
       res.status(404).json({ error: "Account with this email does not exist." }); return;
     }
     const userType = isAdmin ? "admin" : "shop";
     const code = "MA-" + Math.floor(100000 + Math.random() * 900000);
-    const vcId = "vcode-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+    const vcId = uid("vcode");
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    await pool.query(
-      "INSERT INTO verification_codes (id, email, code, purpose, user_type, expires_at, used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-      [vcId, lowerEmail, code, "password_reset", userType, expiresAt, false]
-    );
-    try {
-      const EMAIL_PORT = process.env.EMAIL_SERVER_PORT || 3001;
-      await fetch(`http://localhost:${EMAIL_PORT}/api/send-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: lowerEmail, subject: "Mi Advantage password reset code", html: `<p>Your password reset code is: <strong>${code}</strong></p><p>Use this code to reset your account password.</p><p>This code expires in 15 minutes.</p>` }),
-      });
-    } catch { /* email may not be configured */ }
+    const { error: vcErr } = await getDb().from("verification_codes").insert({
+      id: vcId, email: lowerEmail, code, purpose: "password_reset", user_type: userType,
+      expires_at: expiresAt, used: false,
+    });
+    if (vcErr) throw vcErr;
+    await sendMailBestEffort(lowerEmail, "Mi Advantage password reset code", `<p>Your password reset code is: <strong>${code}</strong></p><p>Use this code to reset your account password.</p><p>This code expires in 15 minutes.</p>`);
     res.json({ ok: true, message: "Password reset code sent to your email." });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
@@ -399,18 +364,23 @@ app.post("/api/db/auth/reset-password", async (req, res) => {
       res.status(400).json({ error: "Email, code, and new password are required." }); return;
     }
     const lowerEmail = String(email).toLowerCase().trim();
-    const [rows] = await pool.query(
-      "SELECT * FROM verification_codes WHERE LOWER(email) = ? AND code = ? AND purpose = 'password_reset' AND used = false ORDER BY created_at DESC LIMIT 1",
-      [lowerEmail, code.trim()]
-    );
-    const record = (rows as any[])[0];
+    const { data: rows, error: lookupErr } = await getDb()
+      .from("verification_codes").select("*")
+      .ilike("email", escapeLike(lowerEmail)).eq("code", code.trim()).eq("purpose", "password_reset").eq("used", false)
+      .order("created_at", { ascending: false }).limit(1);
+    if (lookupErr) throw lookupErr;
+    const record = (rows || [])[0];
     if (!record) { res.status(400).json({ error: "Invalid reset code." }); return; }
     if (new Date(record.expires_at) < new Date()) {
       res.status(400).json({ error: "Reset code expired." }); return;
     }
-    await pool.query("UPDATE verification_codes SET used = true WHERE id = ?", [record.id]);
+    const { error: usedErr } = await getDb()
+      .from("verification_codes").update({ used: true }).eq("id", record.id);
+    if (usedErr) throw usedErr;
     const table = record.user_type === "admin" ? "admins" : "shops";
-    await pool.query(`UPDATE ${table} SET password = ? WHERE LOWER(email) = ?`, [newPassword, lowerEmail]);
+    const { error: pwErr } = await getDb()
+      .from(table).update({ password: newPassword }).ilike("email", escapeLike(lowerEmail));
+    if (pwErr) throw pwErr;
     res.json({ ok: true });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
@@ -433,8 +403,10 @@ app.post("/api/db/auth/register-customer", async (req, res) => {
       res.status(400).json({ error: "Student ID and university are required for student members." }); return;
     }
     // Phone is the unique identity for email-less cards.
-    const [dup] = await pool.query("SELECT id FROM customers WHERE phone = ? LIMIT 1", [cleanPhone]);
-    if ((dup as any[]).length > 0) {
+    const { data: dup, error: dupErr } = await getDb()
+      .from("customers").select("id").eq("phone", cleanPhone).limit(1);
+    if (dupErr) throw dupErr;
+    if ((dup || []).length > 0) {
       res.status(409).json({ error: "This phone number is already registered. Use your Card ID at the scan terminal." }); return;
     }
     // Referrer must be a real issued card (CUST-001+ scheme or legacy codes).
@@ -443,16 +415,26 @@ app.post("/api/db/auth/register-customer", async (req, res) => {
       if (!/^CUST-\d{3,}$/.test(refCode) && !/^CUST-\d{4}$/.test(refCode)) {
         res.status(400).json({ error: "Referrer code must be a valid CARD ID (e.g. CUST-001)." }); return;
       }
-      const [refRows] = await pool.query("SELECT id FROM customers WHERE UPPER(qr_code) = ? LIMIT 1", [refCode]);
-      if ((refRows as any[]).length === 0) {
+      const { data: refRows, error: refErr } = await getDb()
+        .from("customers").select("id").ilike("qr_code", escapeLike(refCode)).limit(1);
+      if (refErr) throw refErr;
+      if ((refRows || []).length === 0) {
         res.status(400).json({ error: `Referrer ${refCode} not found. Check the CARD ID and retry.` }); return;
       }
     } else {
       refCode = "";
     }
     // Next sequential CUST-001+ code, skipping every taken code.
-    const [codeRows] = await pool.query("SELECT qr_code FROM customers");
-    const taken = new Set((codeRows as any[]).map((r) => String(r.qr_code || "").toUpperCase().trim()));
+    const taken = new Set<string>();
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data: codeRows, error: codeErr } = await getDb()
+        .from("customers").select("qr_code").range(from, from + PAGE - 1);
+      if (codeErr) throw codeErr;
+      const batch = codeRows || [];
+      for (const r of batch) taken.add(String((r as any).qr_code || "").toUpperCase().trim());
+      if (batch.length < PAGE) break;
+    }
     const usedNums = new Set<number>();
     for (const c of taken) {
       const m = /^CUST-(\d+)$/.exec(c);
@@ -466,31 +448,27 @@ app.post("/api/db/auth/register-customer", async (req, res) => {
       n++;
       if (n > 99999) { code = `CUST-${Date.now().toString().slice(-6)}`; break; }
     }
-    const id = "cust-" + Date.now();
+    const id = uid("cust");
     const onlineUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    let hasSubCol = false;
+    // supabase-schema.sql guarantees subscription_status — no migration probe needed.
+    const { error: custErr } = await getDb().from("customers").insert({
+      id, name: cleanName, phone: cleanPhone, qr_code: code, valid_until: onlineUntil,
+      customer_type: type, student_id: type === "student" ? cleanStudentId : "",
+      university: type === "student" ? cleanUniversity : "", referee_number: refCode,
+      card_status: "suspended", credit_status: "pending", subscription_status: "unpaid",
+    });
+    if (custErr) throw custErr;
     try {
-      const [colRows] = await pool.query(
-        "SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'customers' AND COLUMN_NAME = 'subscription_status'",
-        [DB_NAME],
-      );
-      hasSubCol = (colRows as any[])[0].cnt > 0;
-    } catch { hasSubCol = false; }
-    if (!hasSubCol) {
-      res.status(500).json({ error: "Database needs the self-registration migration: run mysql-migration-selfreg.sql, then retry." }); return;
-    }
-    await pool.query(
-      "INSERT INTO customers (id, name, email, phone, qr_code, valid_until, customer_type, student_id, university, referee_number, card_status, credit_status, subscription_status) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'suspended', 'pending', 'unpaid')",
-      [id, cleanName, cleanPhone, code, onlineUntil, type, type === "student" ? cleanStudentId : "", type === "student" ? cleanUniversity : "", refCode],
-    );
-    try {
-      await pool.query(
-        "INSERT INTO audit_logs (id, action, user_role, user_email, details, created_at) VALUES (?, ?, ?, ?, ?, NOW())",
-        [`log-${Date.now()}`, "Customer Self-Registered", "System", "self-registration", `Online card ${code} issued to ${cleanName} (${cleanPhone}). 14-day online access, subscription unpaid.`],
-      );
+      await getDb().from("audit_logs").insert({
+        id: uid("log"), action: "Customer Self-Registered", user_role: "System",
+        user_email: "self-registration",
+        details: `Online card ${code} issued to ${cleanName} (${cleanPhone}). 14-day online access, subscription unpaid.`,
+      });
     } catch { /* audit is best-effort */ }
-    const [rows] = await pool.query("SELECT * FROM customers WHERE id = ? LIMIT 1", [id]);
-    res.json({ customer: (rows as any[])[0] || null });
+    const { data: created, error: createdErr } = await getDb()
+      .from("customers").select("*").eq("id", id).maybeSingle();
+    if (createdErr) throw createdErr;
+    res.json({ customer: created || null });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
@@ -508,25 +486,30 @@ app.post("/api/db/auth/activate-subscription", async (req, res) => {
     if (!allowedProviders.includes(String(provider))) {
       res.status(400).json({ error: "Unsupported payment provider." }); return;
     }
-    const [rows] = await pool.query("SELECT * FROM customers WHERE id = ? LIMIT 1", [customerId]);
-    const cust = (rows as any[])[0];
+    const { data: cust, error: custErr } = await getDb()
+      .from("customers").select("*").eq("id", customerId).maybeSingle();
+    if (custErr) throw custErr;
     if (!cust) { res.status(404).json({ error: "Card record not found." }); return; }
     if (cust.subscription_status === "paid" && cust.card_status === "active") {
       res.json({ customer: cust }); return; // idempotent retry
     }
     const oneYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    await pool.query(
-      "UPDATE customers SET card_status = 'active', subscription_status = 'paid', valid_until = ? WHERE id = ?",
-      [oneYear, customerId],
-    );
+    const { error: actErr } = await getDb()
+      .from("customers")
+      .update({ card_status: "active", subscription_status: "paid", valid_until: oneYear })
+      .eq("id", customerId);
+    if (actErr) throw actErr;
     try {
-      await pool.query(
-        "INSERT INTO audit_logs (id, action, user_role, user_email, details, created_at) VALUES (?, ?, ?, ?, ?, NOW())",
-        [`log-${Date.now()}`, "Subscription Paid", "System", "self-registration", `Subscription activated for ${cust.qr_code} (${cust.name}) via ${provider}, Tx ${cleanTx}. 1-year validity from ${oneYear}.`],
-      );
+      await getDb().from("audit_logs").insert({
+        id: uid("log"), action: "Subscription Paid", user_role: "System",
+        user_email: "self-registration",
+        details: `Subscription activated for ${cust.qr_code} (${cust.name}) via ${provider}, Tx ${cleanTx}. 1-year validity from ${oneYear}.`,
+      });
     } catch { /* audit is best-effort */ }
-    const [updated] = await pool.query("SELECT * FROM customers WHERE id = ? LIMIT 1", [customerId]);
-    res.json({ customer: (updated as any[])[0] || null });
+    const { data: updated, error: updatedErr } = await getDb()
+      .from("customers").select("*").eq("id", customerId).maybeSingle();
+    if (updatedErr) throw updatedErr;
+    res.json({ customer: updated || null });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
@@ -536,42 +519,62 @@ app.post("/api/db/auth/activate-subscription", async (req, res) => {
 
 app.get("/api/db/test", async (_req, res) => {
   try {
-    const conn = await pool.getConnection();
+    const db = getDb();
     const tableStatus: Record<string, boolean> = {};
     for (const t of ALLOWED_TABLES) {
-      const [rows] = await conn.query(`SHOW TABLES LIKE '${t}'`);
-      tableStatus[t] = (rows as any[]).length > 0;
+      const { error } = await db.from(t).select("id", { head: true, count: "exact" });
+      tableStatus[t] = !error;
     }
-    conn.release();
     res.json({ ok: true, tables: tableStatus });
   } catch (err: any) {
-    res.status(500).json({ ok: false, error: err?.message });
+    sendDbError(res, err);
   }
 });
 
+// Default seed (idempotent upserts). For existing MySQL data, use the
+// one-off migration script instead: npm run db:seed-supabase
+const DEFAULT_SEED: Record<string, any[]> = {
+  admins: [
+    { id: "admin-1", name: "Super Administrator", email: "artdeje@mail.com", password: "admin123", role: "super_admin", status: "active", email_verified: true },
+  ],
+  shops: [
+    { id: "shop-1", shop_name: "Kigali Fashion House", discount_percent: 12, email: "kigalifashion@shop.com", password: "shop123", status: "approved", email_verified: true, qr_code: "SHOP-1001" },
+    { id: "shop-2", shop_name: "Simba Supermarket", discount_percent: 8, email: "simba@shop.com", password: "shop123", status: "approved", email_verified: true, qr_code: "SHOP-1002" },
+    { id: "shop-3", shop_name: "Inzora Rooftop Cafe", discount_percent: 15, email: "inzora@shop.com", password: "shop123", status: "approved", email_verified: true, qr_code: "SHOP-1003" },
+    { id: "shop-4", shop_name: "Gisenyi Beach Resort", discount_percent: 20, email: "gisenyiresort@shop.com", password: "shop123", status: "approved", email_verified: true, qr_code: "SHOP-1004" },
+  ],
+  customers: [
+    { id: "cust-1", name: "Jean Luc Mutara", email: "jeanluc@example.com", phone: "+250788123456", qr_code: "CUST-9821", valid_until: "2027-07-01", customer_type: "student", student_id: "STU-2023-0451", university: "University of Rwanda", referee_number: "", card_status: "active", credit_status: "pending", subscription_status: "paid" },
+    { id: "cust-2", name: "Aline Uwase", email: "aline@example.com", phone: "+250788654321", qr_code: "CUST-1123", valid_until: "2026-08-10", customer_type: "other", student_id: "", university: "", referee_number: "CUST-9821", card_status: "renew", credit_status: "pending", subscription_status: "paid" },
+    { id: "cust-3", name: "Eric Ndahiro", email: "ericn@example.com", phone: "+250789555666", qr_code: "CUST-4567", valid_until: "2027-07-03", customer_type: "other", student_id: "", university: "", referee_number: "CUST-9821", card_status: "active", credit_status: "pending", subscription_status: "paid" },
+    { id: "cust-4", name: "Marie Claire Uwineza", email: "claire@example.com", phone: "+250782111222", qr_code: "CUST-3049", valid_until: "2027-07-04", customer_type: "student", student_id: "STU-2024-1187", university: "Kigali Independent University", referee_number: "CUST-1123", card_status: "active", credit_status: "pending", subscription_status: "paid" },
+    { id: "cust-5", name: "Divine Karemera", email: "divine@example.com", phone: "+250783999888", qr_code: "CUST-8072", valid_until: "2027-07-05", customer_type: "other", student_id: "", university: "", referee_number: "CUST-1123", card_status: "active", credit_status: "pending", subscription_status: "paid" },
+  ],
+  products: [
+    { id: "prod-1", shop_id: "shop-1", name: "Kitenge Dress", price: 25000, stock: 20, description: "Vibrant Ankara print dress, tailored fit.", status: "active" },
+    { id: "prod-2", shop_id: "shop-1", name: "Men Shirt", price: 18000, stock: 35, description: "Classic cotton shirt, all sizes.", status: "active" },
+    { id: "prod-3", shop_id: "shop-2", name: "Milk 1L", price: 2000, stock: 100, description: "Fresh whole milk 1 litre.", status: "active" },
+    { id: "prod-4", shop_id: "shop-2", name: "Bread 500g", price: 1500, stock: 80, description: "Daily baked brown bread.", status: "active" },
+    { id: "prod-5", shop_id: "shop-3", name: "Cappuccino", price: 3500, stock: 50, description: "Double-shot cappuccino with art.", status: "active" },
+    { id: "prod-6", shop_id: "shop-4", name: "Day Pass", price: 15000, stock: 30, description: "Full-day resort access with lunch.", status: "active" },
+  ],
+  customization: [
+    { id: "global-config", theme_color: "green", title: "Mi Advantage QR Card Scan & Shop", subtitle: "Kigali Premium Privilege", home_h1: "Instant Merchant Discounts", home_h2: "QR Member Advantage System", home_p: "Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly." },
+  ],
+};
+
 app.post("/api/db/seed", async (_req, res) => {
   try {
-    const fs = await import("fs");
-    const path = await import("path");
-    const schemaPath = path.default.join(process.cwd(), "mysql-schema.sql");
-    const raw = fs.default.readFileSync(schemaPath, "utf-8");
-    const cleaned = raw.split("\n").map(line => {
-      const idx = line.indexOf("--");
-      return idx >= 0 ? line.substring(0, idx) : line;
-    }).join("\n");
-    const statements = cleaned.split(";").map(s => s.trim()).filter(s => s.length > 0);
-    let executed = 0, errors = 0;
-    for (const stmt of statements) {
-      const upper = stmt.toUpperCase();
-      if (upper.startsWith("CREATE DATABASE") || upper.startsWith("USE ")) continue;
-      try { await pool.query(stmt); executed++; } catch (e: any) {
-        errors++;
-        if (!e?.message?.includes("Duplicate") && !e?.message?.includes("already exists"))
-          console.warn("Seed error:", e?.message?.substring(0, 150));
-      }
+    const db = getDb();
+    let upserted = 0;
+    const skipped: string[] = [];
+    for (const [table, rows] of Object.entries(DEFAULT_SEED)) {
+      const { error } = await db.from(table).upsert(rows, { onConflict: "id" });
+      if (error) skipped.push(`${table} (${error.message})`);
+      else upserted += rows.length;
     }
-    res.json({ ok: true, message: `${executed} statements OK, ${errors} skipped/duplicate.` });
-  } catch (err: any) { res.status(500).json({ ok: false, error: err?.message }); }
+    res.json({ ok: true, message: `${upserted} rows upserted${skipped.length ? `, skipped: ${skipped.join("; ")}` : ""}.` });
+  } catch (err: any) { sendDbError(res, err); }
 });
 
 app.get("/api/db/check-column/:table/:column", async (req, res) => {
@@ -579,46 +582,33 @@ app.get("/api/db/check-column/:table/:column", async (req, res) => {
   if (!validateTable(table)) { res.status(400).json({ error: "Invalid table" }); return; }
   if (!isSafeIdentifier(column)) { res.status(400).json({ error: "Invalid column" }); return; }
   try {
-    const [rows] = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
-      [DB_NAME, table, column]
-    );
-    res.json({ exists: (rows as any[])[0].cnt > 0 });
+    const { data, error } = await getDb().from(table).select(column).limit(1);
+    if (error) {
+      if (/column .* does not exist|does not exist/i.test(error.message)) {
+        res.json({ exists: false }); return;
+      }
+      throw error;
+    }
+    void data;
+    res.json({ exists: true });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
 // ==========================================
-// HELPER: Build shop-scoped WHERE clause
+// HELPER: Shop-scoped query builder
 // ==========================================
 
-function applyShopScope(table: string, session: Session | undefined, sql: string, params: any[]): { sql: string; params: any[] } {
-  // Public (unauthenticated) requests have no session — no extra scoping.
-  if (!session) return { sql, params };
-  // Shop users can only see their own data in these tables
-  if (session.role === "shop") {
-    if (table === "sales") {
-      // Shops only see their own sales
-      const sep = sql.includes("WHERE") ? " AND" : " WHERE";
-      return { sql: sql + `${sep} shop_id = ?`, params: [...params, session.shopId] };
-    }
-    if (table === "shops") {
-      // Shops only see their own record
-      const sep = sql.includes("WHERE") ? " AND" : " WHERE";
-      return { sql: sql + `${sep} id = ?`, params: [...params, session.shopId] };
-    }
-    if (table === "products") {
-      // Shops only see their own product catalog
-      const sep = sql.includes("WHERE") ? " AND" : " WHERE";
-      return { sql: sql + `${sep} shop_id = ?`, params: [...params, session.shopId] };
-    }
-    // customers: shops can read all (they need to scan QR codes), but cannot modify admin-only fields
-    // audit_logs: shops only see their own logs
-    if (table === "audit_logs") {
-      const sep = sql.includes("WHERE") ? " AND" : " WHERE";
-      return { sql: sql + `${sep} user_email = ?`, params: [...params, session.email] };
-    }
-  }
-  return { sql, params };
+// Shop users can only see their own data in these tables.
+// Public (unauthenticated) requests have no session — no extra scoping.
+// (customers: shops can read all — they need to scan QR codes;
+//  audit_logs: shops only see their own logs.)
+function scopeQuery<T>(table: string, session: Session | undefined, q: T): T {
+  if (!session || session.role !== "shop") return q;
+  const b = q as any;
+  if (table === "sales" || table === "products") return b.eq("shop_id", session.shopId);
+  if (table === "shops") return b.eq("id", session.shopId);
+  if (table === "audit_logs") return b.eq("user_email", session.email);
+  return q;
 }
 
 // ==========================================
@@ -643,10 +633,8 @@ app.post("/api/db/batch-update/:table", async (req, res) => {
     for (const k of keys) {
       if (!isSafeIdentifier(k)) { res.status(400).json({ error: `Invalid column: ${k}` }); return; }
     }
-    const setClauses = keys.map(k => `\`${k}\` = ?`).join(", ");
-    const placeholders = ids.map(() => "?").join(", ");
-    await pool.query(`UPDATE \`${table}\` SET ${setClauses} WHERE id IN (${placeholders})`,
-      [...keys.map(k => data[k]), ...ids]);
+    const { error } = await getDb().from(table).update(data).in("id", ids);
+    if (error) throw error;
     res.json({ updated: ids.length });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
@@ -664,12 +652,8 @@ app.post("/api/db/:table/upsert", async (req, res) => {
     for (const k of keys) {
       if (!isSafeIdentifier(k)) { res.status(400).json({ error: `Invalid column: ${k}` }); return; }
     }
-    const placeholders = keys.map(() => "?").join(", ");
-    const updateClauses = keys.filter(k => k !== "id").map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(", ");
-    const sql = `INSERT INTO \`${table}\` (${keys.map(k => `\`${k}\``).join(", ")}) VALUES (${placeholders}) ON DUPLICATE KEY UPDATE ${updateClauses}`;
-    for (const row of rows) {
-      await pool.query(sql, keys.map(k => row[k] ?? null));
-    }
+    const { error } = await getDb().from(table).upsert(rows, { onConflict: "id" });
+    if (error) throw error;
     res.json({ upserted: rows.length });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
@@ -678,48 +662,42 @@ app.get("/api/db/:table", async (req, res) => {
   const { table } = req.params;
   if (!validateTable(table)) { res.status(400).json({ error: "Invalid table" }); return; }
   try {
-    let sql = `SELECT * FROM \`${table}\``;
-    let params: any[] = [];
+    let q = getDb().from(table).select("*");
     const metaKeys = new Set(["order", "ascending", "limit", "single", "select"]);
     const filters = Object.entries(req.query).filter(([k]) => !metaKeys.has(k));
-    if (filters.length > 0) {
-      const conditions: string[] = [];
-      for (const [key, value] of filters) {
-        if (key.endsWith("_ilike")) {
-          const col = key.replace(/_ilike$/, "");
-          if (!isSafeIdentifier(col)) { res.status(400).json({ error: `Invalid column: ${col}` }); return; }
-          conditions.push(`LOWER(\`${col}\`) LIKE LOWER(?)`);
-          params.push(`%${value}%`);
-        } else if (key === "used") {
-          conditions.push(`\`used\` = ?`);
-          params.push(value === "true" ? 1 : 0);
-        } else {
-          if (!isSafeIdentifier(key)) { res.status(400).json({ error: `Invalid column: ${key}` }); return; }
-          conditions.push(`\`${key}\` = ?`);
-          params.push(value);
-        }
+    for (const [key, value] of filters) {
+      const v = String(value);
+      if (key.endsWith("_ilike")) {
+        const col = key.replace(/_ilike$/, "");
+        if (!isSafeIdentifier(col)) { res.status(400).json({ error: `Invalid column: ${col}` }); return; }
+        q = q.ilike(col, `%${escapeLike(v)}%`);
+      } else if (key === "used") {
+        // Postgres stores real booleans (old MySQL layer mapped TINYINT 1/0).
+        q = q.eq("used", v === "true");
+      } else {
+        if (!isSafeIdentifier(key)) { res.status(400).json({ error: `Invalid column: ${key}` }); return; }
+        q = q.eq(key, v);
       }
-      if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
     }
     // Apply shop scope (safe when req.session is undefined for public routes)
-    const scoped = applyShopScope(table, req.session, sql, params);
-    sql = scoped.sql;
-    params = scoped.params;
+    q = scopeQuery(table, req.session, q);
 
     const orderCol = req.query.order as string;
     if (orderCol) {
       if (!isSafeIdentifier(orderCol)) { res.status(400).json({ error: `Invalid order column: ${orderCol}` }); return; }
-      sql += ` ORDER BY \`${orderCol}\` ${req.query.ascending === "true" ? "ASC" : "DESC"}`;
+      q = q.order(orderCol, { ascending: req.query.ascending === "true" });
     }
     const limit = req.query.limit as string;
     if (limit) {
       const n = parseInt(limit, 10);
       if (!Number.isFinite(n) || n <= 0 || n > 1000) { res.status(400).json({ error: "Invalid limit (1-1000)." }); return; }
-      sql += ` LIMIT ${n}`;
+      q = q.limit(n);
     }
-    const [rows] = await pool.query(sql, params);
-    if (req.query.single === "true") res.json((rows as any[])[0] || null);
-    else res.json(rows);
+    const { data: rows, error } = await q;
+    if (error) throw error;
+    const out = coerceNumerics(table, rows || []);
+    if (req.query.single === "true") res.json((out as any[])[0] || null);
+    else res.json(out);
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
@@ -727,11 +705,11 @@ app.get("/api/db/:table/:id", async (req, res) => {
   const { table, id } = req.params;
   if (!validateTable(table)) { res.status(400).json({ error: "Invalid table" }); return; }
   try {
-    let sql = `SELECT * FROM \`${table}\` WHERE id = ?`;
-    let params: any[] = [id];
-    const scoped = applyShopScope(table, req.session, sql, params);
-    const [rows] = await pool.query(scoped.sql, scoped.params);
-    res.json((rows as any[])[0] || null);
+    const q = scopeQuery(table, req.session,
+      getDb().from(table).select("*").eq("id", id));
+    const { data: row, error } = await q.maybeSingle();
+    if (error) throw error;
+    res.json(coerceNumerics(table, row || null));
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
@@ -774,11 +752,13 @@ app.post("/api/db/:table", async (req, res) => {
     for (const k of keys) {
       if (!isSafeIdentifier(k)) { res.status(400).json({ error: `Invalid column: ${k}` }); return; }
     }
-    const placeholders = keys.map(() => "?").join(", ");
-    const sql = `INSERT INTO \`${table}\` (${keys.map(k => `\`${k}\``).join(", ")}) VALUES (${placeholders})`;
-    for (const row of rows) {
-      await pool.query(sql, keys.map(k => row[k] ?? null));
-    }
+    const clean = rows.map((row: any) => {
+      const o: any = {};
+      for (const k of keys) o[k] = row[k] ?? null;
+      return o;
+    });
+    const { error } = await getDb().from(table).insert(clean);
+    if (error) throw error;
     res.json({ inserted: rows.length });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
@@ -793,8 +773,10 @@ app.put("/api/db/:table/:id", async (req, res) => {
   // Shops can only update their OWN products (ownership proof)
   if (req.session?.role === "shop" && table === "products") {
     try {
-      const [existing] = await pool.query("SELECT shop_id FROM `products` WHERE id = ?", [id]);
-      const owner = (existing as any[])[0]?.shop_id;
+      const { data: existing, error: ownerErr } = await getDb()
+        .from("products").select("shop_id").eq("id", id).maybeSingle();
+      if (ownerErr) throw ownerErr;
+      const owner = (existing as any)?.shop_id;
       if (!owner || owner !== req.session?.shopId) {
         res.status(403).json({ error: "Cannot modify another shop's product." }); return;
       }
@@ -819,11 +801,10 @@ app.put("/api/db/:table/:id", async (req, res) => {
     for (const k of finalKeys) {
       if (!isSafeIdentifier(k)) { res.status(400).json({ error: `Invalid column: ${k}` }); return; }
     }
-    const setClauses = finalKeys.map(k => `\`${k}\` = ?`).join(", ");
-    await pool.query(`UPDATE \`${table}\` SET ${setClauses} WHERE id = ?`,
-      [...finalKeys.map(k => data[k]), id]);
-    const [rows] = await pool.query(`SELECT * FROM \`${table}\` WHERE id = ?`, [id]);
-    res.json((rows as any[])[0] || null);
+    const { data: updated, error } = await getDb()
+      .from(table).update(data).eq("id", id).select();
+    if (error) throw error;
+    res.json(coerceNumerics(table, (updated || [])[0] || null));
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
@@ -845,10 +826,8 @@ app.put("/api/db/:table", async (req, res) => {
     for (const k of [...dataKeys, ...filterKeys]) {
       if (!isSafeIdentifier(k)) { res.status(400).json({ error: `Invalid column: ${k}` }); return; }
     }
-    const setClauses = dataKeys.map(k => `\`${k}\` = ?`).join(", ");
-    const whereClauses = filterKeys.map(k => `\`${k}\` = ?`).join(" AND ");
-    await pool.query(`UPDATE \`${table}\` SET ${setClauses} WHERE ${whereClauses}`,
-      [...dataKeys.map(k => data[k]), ...filterKeys.map(k => filters[k])]);
+    const { error } = await getDb().from(table).update(data).match(filters);
+    if (error) throw error;
     res.json({ updated: true });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
@@ -862,15 +841,18 @@ app.delete("/api/db/:table/:id", async (req, res) => {
   // Shops can only delete their OWN products (ownership proof)
   if (req.session?.role === "shop" && table === "products") {
     try {
-      const [existing] = await pool.query("SELECT shop_id FROM `products` WHERE id = ?", [id]);
-      const owner = (existing as any[])[0]?.shop_id;
+      const { data: existing, error: ownerErr } = await getDb()
+        .from("products").select("shop_id").eq("id", id).maybeSingle();
+      if (ownerErr) throw ownerErr;
+      const owner = (existing as any)?.shop_id;
       if (!owner || owner !== req.session?.shopId) {
         res.status(403).json({ error: "Cannot delete another shop's product." }); return;
       }
     } catch (err: any) { res.status(500).json({ error: err?.message }); return; }
   }
   try {
-    await pool.query(`DELETE FROM \`${table}\` WHERE id = ?`, [id]);
+    const { error } = await getDb().from(table).delete().eq("id", id);
+    if (error) throw error;
     res.json({ deleted: true });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
@@ -1013,15 +995,16 @@ process.on("uncaughtException", (err: any) => {
 const PORT = Number(process.env.PORT || process.env.API_SERVER_PORT || 3002);
 const server = app.listen(PORT, async () => {
   console.log(`Mi Advantage API server running on http://localhost:${PORT}`);
-  console.log(`MySQL: ${DB_HOST}:${DB_PORT}/${DB_NAME} as ${DB_USER}`);
+  console.log(`DB: Supabase ${process.env.SUPABASE_URL || "(not configured)"}`);
   console.log(`Auth: token-based sessions (${SESSION_TTL / 3600000}h TTL)`);
-  // Startup connectivity probe: warn clearly if MySQL is down, but STAY UP
+  // Startup connectivity probe: warn clearly if Supabase is down, but STAY UP
   // so the frontend receives JSON 503s instead of proxy ECONNRESET.
   try {
-    await pool.query("SELECT 1");
-    console.log("MySQL: connection OK.");
+    const { error } = await getDb().from("customization").select("id", { head: true });
+    if (error) throw error;
+    console.log("Supabase: connection OK.");
   } catch (err: any) {
-    console.error(`MySQL: ${dbErrorMessage(err)}`);
+    console.error(`Supabase: ${dbErrorMessage(err)}`);
   }
 });
 server.on("error", (err: NodeJS.ErrnoException) => {
