@@ -876,6 +876,11 @@ const transporter = nodemailer.createTransport({
   port: SMTP_PORT,
   secure: SMTP_PORT === 465,
   auth: { user: SMTP_USER, pass: SMTP_PASS },
+  // Never let a blocked/slow SMTP host hang a request (or the health check)
+  // forever — fail fast with a clear error instead.
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
 
 const emailRateLimit = new Map<string, number[]>();
@@ -894,16 +899,31 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-app.get("/api/health", async (_req, res) => {
+// Liveness probe. MUST answer instantly and never depend on an outbound
+// network call: Render (and other hosts) fail the health check — leaving the
+// app stuck on the "Application loading" page — if this is slow. SMTP status
+// is reported as configuration only; the deep check lives at /api/health/smtp.
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    smtp: Boolean(SMTP_USER && SMTP_PASS),
+    from: SMTP_FROM,
+    uptime: Math.round(process.uptime()),
+  });
+});
+
+// Deep SMTP check (optional, admin-authenticated). Bounded by transporter
+// timeouts so it can never hang the process.
+app.get("/api/health/smtp", async (_req, res) => {
   if (!SMTP_USER || !SMTP_PASS) {
-    res.json({ ok: true, smtp: false, error: "SMTP credentials not configured in .env" });
+    res.status(503).json({ ok: false, smtp: false, error: "SMTP credentials not configured." });
     return;
   }
   try {
     await transporter.verify();
     res.json({ ok: true, smtp: true, from: SMTP_FROM });
   } catch (err: any) {
-    res.json({ ok: true, smtp: false, error: err?.message || "SMTP verification failed" });
+    res.status(503).json({ ok: false, smtp: false, error: err?.message || "SMTP verification failed" });
   }
 });
 
@@ -993,8 +1013,10 @@ process.on("uncaughtException", (err: any) => {
 // ==========================================
 
 // Render (and most hosts) inject PORT — it must win over the local dev ports.
+// Bind explicitly to 0.0.0.0 so the platform's proxy/health checker can reach
+// it regardless of IPv4/IPv6 defaults.
 const PORT = Number(process.env.PORT || process.env.API_SERVER_PORT || 3002);
-const server = app.listen(PORT, async () => {
+const server = app.listen(PORT, "0.0.0.0", async () => {
   console.log(`Mi Advantage API server running on http://localhost:${PORT}`);
   console.log(`DB: Supabase ${process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "(not configured)"}`);
   if (!isServiceRole()) {
