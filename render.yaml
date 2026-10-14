@@ -27,8 +27,14 @@ services:
         value: ""
       - key: VITE_EMAIL_API_URL
         value: ""
-      # --- Supabase (Project Settings → API; service_role = secret key) ---
+      # --- Supabase (Project Settings → API) ---
+      # Live project: https://wbldciermnpgmlsookrs.supabase.co
+      # Paste the anon key into SUPABASE_ANON_KEY (works with the project's
+      # public RLS policies). Upgrade path: paste the "secret" service_role
+      # key into SUPABASE_SERVICE_ROLE_KEY + lock down RLS (supabase-schema.sql).
       - key: SUPABASE_URL
+        value: https://wbldciermnpgmlsookrs.supabase.co
+      - key: SUPABASE_ANON_KEY
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false

@@ -9,8 +9,21 @@
 // ============================================================
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "";
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_URL =
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+// service_role (bypasses RLS) preferred. Falls back to the anon key, which
+// only works while the project's public RLS policies allow it (see
+// supabase-migration-live.sql). Never put any key in a VITE_* browser var
+// for new setups — the fallbacks exist for the legacy .env only.
+const SUPABASE_SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  "";
+
+export function isServiceRole(): boolean {
+  return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
 
 let _client: SupabaseClient | null = null;
 
@@ -51,7 +64,8 @@ export function dbErrorMessage(err: any): string {
   if (!isDbConfigured() || err?.code === "DB_NOT_CONFIGURED") {
     return (
       "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY " +
-      "in .env (local) or Render env vars (production), then retry."
+      "(or SUPABASE_ANON_KEY while public RLS policies allow it) in .env " +
+      "(local) or Render env vars (production), then retry."
     );
   }
   if (isDbConnectionError(err)) {

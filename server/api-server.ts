@@ -11,6 +11,7 @@ import {
   coerceNumerics,
   escapeLike,
   uid,
+  isServiceRole,
 } from "./db";
 
 const app = express();
@@ -995,7 +996,10 @@ process.on("uncaughtException", (err: any) => {
 const PORT = Number(process.env.PORT || process.env.API_SERVER_PORT || 3002);
 const server = app.listen(PORT, async () => {
   console.log(`Mi Advantage API server running on http://localhost:${PORT}`);
-  console.log(`DB: Supabase ${process.env.SUPABASE_URL || "(not configured)"}`);
+  console.log(`DB: Supabase ${process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "(not configured)"}`);
+  if (!isServiceRole()) {
+    console.warn("DB: running with anon key — writes obey table RLS policies. For full access, set SUPABASE_SERVICE_ROLE_KEY.");
+  }
   console.log(`Auth: token-based sessions (${SESSION_TTL / 3600000}h TTL)`);
   // Startup connectivity probe: warn clearly if Supabase is down, but STAY UP
   // so the frontend receives JSON 503s instead of proxy ECONNRESET.

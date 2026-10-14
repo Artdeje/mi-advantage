@@ -50,10 +50,12 @@ See `.env.example` for all variables:
 
 `render.yaml` pre-fills everything. One service hosts the React app + API + email:
 
-1. Create a project at https://supabase.com/dashboard.
-2. Run `supabase-schema.sql` once in the Supabase Dashboard → SQL Editor
-   (creates all 8 tables + seed, RLS locked to service_role).
-3. Set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` env vars in the Render dashboard.
+1. Live project `wbldciermnpgmlsookrs` already holds the data. Run
+   `supabase-migration-live.sql` once in the Supabase Dashboard → SQL Editor
+   (adds shop QR + subscription columns, products access, counter QR backfill).
+   (Fresh project instead? Run `supabase-schema.sql` — full schema + seed.)
+2. Set `SUPABASE_URL` + `SUPABASE_ANON_KEY` env vars in the Render dashboard
+   (anon key works with the project's public RLS policies).
 4. Set `SMTP_*` env vars (Gmail App Password, no spaces).
 5. Build Command: `npm install && npm run build` — Start Command: `node dist/server.js`.
 6. Seed once after deploy — either carry over MySQL data (start local MySQL, then
