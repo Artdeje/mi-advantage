@@ -8,7 +8,7 @@
     "build": "vite build && npm run build:server",
     "build:server": "node scripts/build-server.mjs",
     "preview": "vite preview",
-    "start": "node dist/server.js",
+    "start": "npm run build && node dist/server.js",
     "clean": "node -e \"try{require('fs').rmSync('dist',{recursive:true,force:true})}catch(e){}\"",
     "lint": "tsc --noEmit",
     "db:init": "tsx scripts/db-init.ts",
