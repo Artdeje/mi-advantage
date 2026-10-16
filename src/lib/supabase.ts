@@ -94,23 +94,28 @@ export type CardStatusProbe = {
   subscription_status?: string;
 };
 
+export function isCustomerCardExpired(c: CardStatusProbe): boolean {
+  if (!c.valid_until) return false;
+  let expiry: Date;
+  const v = c.valid_until.trim();
+  if (v.includes("T")) {
+    expiry = new Date(v);
+  } else if (v.includes(" ")) {
+    expiry = new Date(v.replace(" ", "T"));
+  } else {
+    // Date-only format (e.g. "2026-10-16"): valid through the end of that day
+    expiry = new Date(`${v}T23:59:59.999`);
+  }
+  if (isNaN(expiry.getTime())) return false;
+  return new Date() > expiry;
+}
+
 export function getCustomerCardStatus(
   c: CardStatusProbe,
 ): "active" | "renew" | "suspended" {
   if (c.card_status === "suspended") return "suspended";
-  if (c.card_status === "renew" || c.card_status === "expired") return "renew";
-  if (!c.valid_until) return "active";
-  // Date-only values expire at the START of the expiry day (the date has been
-  // reached). Values with an exact time expire precisely at that time.
-  const expiry = c.valid_until.includes("T")
-    ? new Date(c.valid_until)
-    : new Date(c.valid_until + "T00:00:00");
-  if (new Date() >= expiry) return "renew";
+  if (isCustomerCardExpired(c)) return "renew";
   return "active";
-}
-
-export function isCustomerCardExpired(c: CardStatusProbe): boolean {
-  return getCustomerCardStatus(c) === "renew";
 }
 
 // Returns the exact message that blocks a card at a scan terminal, or null if

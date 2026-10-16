@@ -100,6 +100,8 @@ const PUBLIC_PATHS = new Set([
   "/api/db/auth/reset-password",
   "/api/db/test",
   "/api/db/seed",
+  "/api/health",
+  "/health",
 ]);
 
 declare global {
@@ -111,6 +113,11 @@ declare global {
 }
 
 function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  // Health checks must always bypass auth immediately (Render, uptime monitors)
+  if (req.method === "GET" && (req.path === "/api/health" || req.path === "/health" || req.path.startsWith("/api/health/"))) {
+    next();
+    return;
+  }
   // Non-API traffic (the React frontend, assets) never needs a session token.
   // Without this bypass, GET / hits this middleware and returns the
   // "Authentication required" 401 instead of the welcome page.
@@ -136,7 +143,6 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   // Email delivery + health (merged from email-server.ts so a single
   // production process serves everything; rate-limited + validated below)
   if (req.method === "POST" && req.path === "/api/send-email") { next(); return; }
-  if (req.method === "GET" && req.path === "/api/health") { next(); return; }
 
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -903,7 +909,7 @@ function isValidEmail(email: string): boolean {
 // network call: Render (and other hosts) fail the health check — leaving the
 // app stuck on the "Application loading" page — if this is slow. SMTP status
 // is reported as configuration only; the deep check lives at /api/health/smtp.
-app.get("/api/health", (_req, res) => {
+app.get(["/api/health", "/health", "/api/health/"], (_req, res) => {
   res.json({
     ok: true,
     smtp: Boolean(SMTP_USER && SMTP_PASS),
