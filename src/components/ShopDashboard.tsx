@@ -259,30 +259,37 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
     reportWindow.document.close();
   };
 
-  // Load shop data
+  // Load shop data. Lightweight data (sales/products) loads first so the scan
+  // terminal is usable immediately; the shop record (which can embed a multi-MB
+  // base64 logo) loads in parallel and fills in when ready.
   const loadData = async () => {
     setLoading(true);
-    const shopsList = await db.getShops();
-    const currentShop = shopsList.find(s => s.id === shopUser.id);
-    if (currentShop) {
-      setShopDetails(currentShop);
-      if (currentShop.profile_picture) {
-        setProfilePic(currentShop.profile_picture);
-      }
-      setAccountShopName(currentShop.shop_name);
-      setAccountDiscount(currentShop.discount_percent);
-      setAccountEmail(currentShop.email);
-      setAccountDescription(currentShop.description || '');
+    try {
+      const allSales = await db.getSales();
+      const shopSales = allSales.filter(sale => sale.shop_id === shopUser.id);
+      shopSales.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setSales(shopSales);
+      setProducts(await db.getProducts(shopUser.id));
+    } catch (err) {
+      console.error('ShopDashboard loadData (light) failed:', err);
     }
-
-    const allSales = await db.getSales();
-    const shopSales = allSales.filter(sale => sale.shop_id === shopUser.id);
-    shopSales.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    setSales(shopSales);
-
-    const shopProducts = await db.getProducts(shopUser.id);
-    setProducts(shopProducts);
     setLoading(false);
+
+    db.getShops()
+      .then((shopsList) => {
+        const currentShop = shopsList.find(s => s.id === shopUser.id);
+        if (currentShop) {
+          setShopDetails(currentShop);
+          if (currentShop.profile_picture) {
+            setProfilePic(currentShop.profile_picture);
+          }
+          setAccountShopName(currentShop.shop_name);
+          setAccountDiscount(currentShop.discount_percent);
+          setAccountEmail(currentShop.email);
+          setAccountDescription(currentShop.description || '');
+        }
+      })
+      .catch((err) => console.error('ShopDashboard loadData (shop) failed:', err));
   };
 
   useEffect(() => {
