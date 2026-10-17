@@ -31,6 +31,38 @@ export default function WelcomePage() {
     "Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges.";
   const footerText = cust?.footer_text || "© 2026 Mi Advantage • Partner Merchant Terminals Kigali, Rwanda";
   const footerSubtext = cust?.footer_subtext || "Encrypted Connection • Kigali, Rwanda";
+  const f1Title = cust?.feature1_title || "Partner Outlets";
+  const f1Desc = cust?.feature1_desc || "Approved merchants across Kigali offer exclusive member discounts.";
+  const f2Title = cust?.feature2_title || "Instant Savings";
+  const f2Desc = cust?.feature2_desc || "Discounts are computed in real-time at the checkout terminal.";
+  const f3Title = cust?.feature3_title || "Member Cards";
+  const f3Desc = cust?.feature3_desc || "Every member gets unique QR credentials.";
+
+  // Default embedded background: person scanning a member card (SVG data URI)
+  // Used when admin selects image background but hasn't uploaded a custom image.
+  const DEFAULT_BG_SVG = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080' viewBox='0 0 1920 1080'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:%23059669;stop-opacity:1'/><stop offset='100%' style='stop-color:%230d9488;stop-opacity:1'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)'/><circle cx='960' cy='420' r='110' fill='%23ffffff' opacity='0.12'/><path d='M850 420 L960 300 L1070 420 Z' fill='%23ffffff' opacity='0.18'/><rect x='700' y='500' width='520' height='120' rx='24' fill='%23ffffff' opacity='0.15'/><text x='960' y='545' font-family='Arial, sans-serif' font-size='52' fill='%23ffffff' text-anchor='middle' font-weight='bold'>Mi Advantage</text><text x='960' y='600' font-family='Arial, sans-serif' font-size='20' fill='%23ffffff' opacity='0.85' text-anchor='middle'>Member Card Scanning Terminal</text></svg>";
+
+  // Apply landing page background (image / gradient / none) via inline style
+  const bgType = cust?.home_background_type || "image";
+  const bgValue = cust?.home_background_value || "";
+  const effectiveBgValue = bgType === "image" && !bgValue ? DEFAULT_BG_SVG : bgValue;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (bgType === "image" && effectiveBgValue) {
+      root.style.backgroundImage = `url("${effectiveBgValue}")`;
+      root.style.backgroundSize = "cover";
+      root.style.backgroundPosition = "center";
+      root.style.backgroundRepeat = "no-repeat";
+      // Remove default gradient classes' effect by overriding
+      root.style.backgroundColor = "";
+    } else if (bgType === "gradient" && bgValue) {
+      root.style.backgroundImage = bgValue;
+      root.style.backgroundSize = "cover";
+    } else {
+      root.style.backgroundImage = "";
+    }
+  }, [bgType, effectiveBgValue, bgValue]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 dark:from-slate-950 via-emerald-50/40 dark:via-emerald-950/20 to-teal-50/40 dark:to-teal-950/20 flex flex-col">
@@ -148,22 +180,22 @@ export default function WelcomePage() {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 flex items-start gap-3">
             <div className="p-2.5 rounded-xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400"><Store className="w-5 h-5" /></div>
             <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">Partner Outlets</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Approved merchants across Kigali offer exclusive member discounts.</p>
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">{f1Title}</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{f1Desc}</p>
             </div>
           </div>
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 flex items-start gap-3">
             <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400"><TrendingUp className="w-5 h-5" /></div>
             <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">Instant Savings</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Discounts are computed in real-time at the checkout terminal.</p>
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">{f2Title}</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{f2Desc}</p>
             </div>
           </div>
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 flex items-start gap-3">
             <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400"><ShoppingBag className="w-5 h-5" /></div>
             <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">Member Cards</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Every member gets unique QR credentials.</p>
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">{f3Title}</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{f3Desc}</p>
             </div>
           </div>
         </div>

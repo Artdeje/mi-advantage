@@ -263,11 +263,12 @@ async function sendMailBestEffort(to: string, subject: string, html: string) {
 // --- Public: Admin registration ---
 app.post("/api/db/auth/register-admin", async (req, res) => {
   try {
-    const { name, email, password } = req.body || {};
+    const { name, email, password, role } = req.body || {};
     if (!name || !email || !password) {
       res.status(400).json({ error: "Name, email, and password are required." }); return;
     }
     const lowerEmail = String(email).toLowerCase().trim();
+    const adminRole = role && ["super_admin", "admin", "manager"].includes(role) ? role : "admin";
     const { data: existing, error: existingErr } = await getDb()
       .from("admins").select("id").ilike("email", escapeLike(lowerEmail)).limit(1);
     if (existingErr) throw existingErr;
@@ -276,7 +277,7 @@ app.post("/api/db/auth/register-admin", async (req, res) => {
     }
     const id = uid("admin");
     const { error: insertErr } = await getDb().from("admins").insert({
-      id, name, email: lowerEmail, password, role: "admin", status: "active", email_verified: false,
+      id, name, email: lowerEmail, password, role: adminRole, status: "active", email_verified: false,
     });
     if (insertErr) throw insertErr;
     // Generate and store verification code

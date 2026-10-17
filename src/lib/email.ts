@@ -11,7 +11,13 @@ export async function sendEmail(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to, subject, html }),
     });
-    const data = await res.json();
+    let data: any = {};
+    try {
+      data = await res.json();
+    } catch {
+      // Non-JSON response (e.g. HTML error page) — treat as failure
+      return { success: false, error: `Email delivery failed (HTTP ${res.status}).` };
+    }
     if (!res.ok || !data.success) {
       return { success: false, error: data?.error || "Email delivery failed." };
     }

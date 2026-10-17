@@ -128,14 +128,14 @@ export default function AdminDashboard({
     null,
   );
   const [adminsList, setAdminsList] = useState<Admin[]>([]);
-  const [currentAdminRole, setCurrentAdminRole] = useState<'super_admin' | 'admin'>('admin');
+  const [currentAdminRole, setCurrentAdminRole] = useState<'super_admin' | 'admin' | 'manager'>('admin');
 
   // Admin Account CRUD Form state
   const [isEditingAdmin, setIsEditingAdmin] = useState<string | null>(null); // admin ID or null for creation
   const [adminFormName, setAdminFormName] = useState("");
   const [adminFormEmail, setAdminFormEmail] = useState("");
   const [adminFormPassword, setAdminFormPassword] = useState("");
-  const [adminFormRole, setAdminFormRole] = useState<'super_admin' | 'admin'>('admin');
+  const [adminFormRole, setAdminFormRole] = useState<'super_admin' | 'admin' | 'manager'>('admin');
   const [adminMsg, setAdminMsg] = useState("");
 
 
@@ -187,6 +187,16 @@ export default function AdminDashboard({
   const [h1Input, setH1Input] = useState("");
   const [h2Input, setH2Input] = useState("");
   const [pInput, setPInput] = useState("");
+  // Feature strip editable fields
+  const [f1Title, setF1Title] = useState("");
+  const [f1Desc, setF1Desc] = useState("");
+  const [f2Title, setF2Title] = useState("");
+  const [f2Desc, setF2Desc] = useState("");
+  const [f3Title, setF3Title] = useState("");
+  const [f3Desc, setF3Desc] = useState("");
+  // Landing page background
+  const [homeBgType, setHomeBgType] = useState<"none" | "image" | "gradient">("none");
+  const [homeBgValue, setHomeBgValue] = useState("");
   const [loginHeading, setLoginHeading] = useState("");
   const [loginSubtext, setLoginSubtext] = useState("");
   const [signupHeading, setSignupHeading] = useState("");
@@ -240,7 +250,7 @@ export default function AdminDashboard({
       setAdminsList(listAdmins);
 
       const authUser = db.currentUser;
-      setCurrentAdminRole((authUser?.admin_role as 'super_admin' | 'admin') || 'admin');
+      setCurrentAdminRole((authUser?.admin_role as 'super_admin' | 'admin' | 'manager') || 'admin');
 
       // Seed form customizations
       setTitleInput(currentCust.title);
@@ -262,6 +272,18 @@ export default function AdminDashboard({
       // Seed footer values
       setFooterText(currentCust.footer_text || '© 2026 Mi Advantage • Partner Merchant Terminals Kigali, Rwanda');
       setFooterSubtext(currentCust.footer_subtext || 'Encrypted Connection • Kigali, Rwanda');
+
+      // Seed feature strip values
+      setF1Title(currentCust.feature1_title || 'Partner Outlets');
+      setF1Desc(currentCust.feature1_desc || 'Approved merchants across Kigali offer exclusive member discounts.');
+      setF2Title(currentCust.feature2_title || 'Instant Savings');
+      setF2Desc(currentCust.feature2_desc || 'Discounts are computed in real-time at the checkout terminal.');
+      setF3Title(currentCust.feature3_title || 'Member Cards');
+      setF3Desc(currentCust.feature3_desc || 'Every member gets unique QR credentials.');
+
+      // Seed landing page background
+      setHomeBgType(currentCust.home_background_type || 'none');
+      setHomeBgValue(currentCust.home_background_value || '');
 
       // Seed full branding values
       setPrimaryColor(currentCust.primary_color || '#059669');
@@ -590,6 +612,14 @@ export default function AdminDashboard({
         home_h1: h1Input,
         home_h2: h2Input,
         home_p: pInput,
+        feature1_title: f1Title,
+        feature1_desc: f1Desc,
+        feature2_title: f2Title,
+        feature2_desc: f2Desc,
+        feature3_title: f3Title,
+        feature3_desc: f3Desc,
+        home_background_type: homeBgType,
+        home_background_value: homeBgValue,
         login_heading: loginHeading,
         login_subtext: loginSubtext,
         signup_heading: signupHeading,
@@ -607,7 +637,7 @@ export default function AdminDashboard({
         custom_css: customCss,
       });
       const fresh = await db.getCustomization();
-      if (fresh.title === updated.title && fresh.theme_color === updated.theme_color) {
+      if (fresh.title === updated.title && fresh.theme_color === updated.theme_color && fresh.home_h1 === updated.home_h1) {
         setBrandingMsg("Branding saved successfully. Changes are live across the portal.");
         if (onCustomizationChange) onCustomizationChange();
       } else {
@@ -1302,6 +1332,7 @@ export default function AdminDashboard({
   // Current logged in administrator role for super-admin gating
   const activeAdminRole = db.currentUser?.admin_role || "admin";
   const isSuperAdmin = activeAdminRole === "super_admin";
+  const isManager = activeAdminRole === "manager";
   const pendingShops = shops.filter((s) => s.status === "pending");
 
   const tabs = (
@@ -1316,6 +1347,10 @@ export default function AdminDashboard({
       { id: "audits", label: "Audit Logs", icon: History },
     ] as const
   ).filter((t) => t.id !== "admins" || isSuperAdmin);
+  // Managers cannot access customization/branding settings
+  if (isManager) {
+    tabs.splice(tabs.findIndex((t) => t.id === "customization"), 1);
+  }
 
   // Main menu + grouped Settings menu (Branding, Admins, Database, Audit Logs)
   const mainTabs = tabs.filter(
@@ -2937,7 +2972,7 @@ export default function AdminDashboard({
         )}
 
         {/* --- TAB: BRANDING BRAND CONFIGURATIONS --- */}
-        {activeTab === "customization" && (
+        {activeTab === "customization" && !isManager && (
           <div
             className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 lg:p-8"
             id="admin-customization-panel"
@@ -3049,6 +3084,69 @@ export default function AdminDashboard({
                     <textarea required rows={2} value={pInput} onChange={(e) => setPInput(e.target.value)} placeholder="e.g. Scan your digital member card..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                 </div>
+              </div>
+
+              {/* ROW 2B: Feature Strip (editable landing page cards) */}
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Feature Strip (3 Partner Cards)</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 1 Title</label>
+                      <input type="text" value={f1Title} onChange={(e) => setF1Title(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 1 Description</label>
+                      <input type="text" value={f1Desc} onChange={(e) => setF1Desc(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 2 Title</label>
+                      <input type="text" value={f2Title} onChange={(e) => setF2Title(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 2 Description</label>
+                      <input type="text" value={f2Desc} onChange={(e) => setF2Desc(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 3 Title</label>
+                      <input type="text" value={f3Title} onChange={(e) => setF3Title(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 3 Description</label>
+                      <input type="text" value={f3Desc} onChange={(e) => setF3Desc(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ROW 2C: Landing Page Background */}
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Landing Page Background</h4>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Background Type</label>
+                    <select value={homeBgType} onChange={(e) => setHomeBgType(e.target.value as "none" | "image" | "gradient")} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
+                      <option value="none">None (default gradient)</option>
+                      <option value="image">Image URL</option>
+                      <option value="gradient">Custom Gradient</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">{homeBgType === "image" ? "Image URL" : "Gradient Value"}</label>
+                    <input
+                      type={homeBgType === "image" ? "url" : "text"}
+                      value={homeBgValue}
+                      onChange={(e) => setHomeBgValue(e.target.value)}
+                      placeholder={homeBgType === "image" ? "https://example.com/person-scanning-card.jpg" : "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)"}
+                      className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Tip: Use an image of a person scanning a member card for the hero background.</p>
               </div>
 
               {/* ROW 3: Login/Signup + Footer */}
@@ -3222,7 +3320,8 @@ export default function AdminDashboard({
                 </div>
                 <div>
                   <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">Administrator Role</label>
-                  <select value={adminFormRole} onChange={(e) => setAdminFormRole(e.target.value as 'super_admin' | 'admin')} className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold">
+                  <select value={adminFormRole} onChange={(e) => setAdminFormRole(e.target.value as 'super_admin' | 'admin' | 'manager')} className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold">
+                    <option value="manager">Manager (limited - no admin or branding access)</option>
                     <option value="admin">Standard Admin</option>
                     <option value="super_admin">Super Admin (manages other admins)</option>
                   </select>

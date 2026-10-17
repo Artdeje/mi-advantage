@@ -20,7 +20,7 @@ export interface Admin {
   name: string;
   email: string;
   password?: string;
-  role?: 'super_admin' | 'admin';
+  role?: 'super_admin' | 'admin' | 'manager';
   status?: 'active' | 'suspended';
   email_verified?: boolean;
   created_at: string;
@@ -106,6 +106,16 @@ export interface Customization {
   // Login background
   login_background_type?: string;
   login_background_value?: string;
+  // Landing page background
+  home_background_type?: 'none' | 'image' | 'gradient';
+  home_background_value?: string;
+  // Feature strip (editable landing page content)
+  feature1_title?: string;
+  feature1_desc?: string;
+  feature2_title?: string;
+  feature2_desc?: string;
+  feature3_title?: string;
+  feature3_desc?: string;
   // Footer
   footer_text?: string;
   footer_subtext?: string;
@@ -124,7 +134,7 @@ export interface AuthUser {
   role: 'admin' | 'shop';
   name?: string; // Dynamic name from admins or shops table
   shop_id?: string; // if role is 'shop'
-  admin_role?: 'super_admin' | 'admin'; // if role is 'admin'
+  admin_role?: 'super_admin' | 'admin' | 'manager'; // if role is 'admin'
 }
 
 export interface VerificationCode {
@@ -132,7 +142,7 @@ export interface VerificationCode {
   email: string;
   code: string;
   purpose: 'signup' | 'password_reset';
-  user_type: 'admin' | 'shop';
+  user_type: 'admin' | 'shop' | 'manager';
   expires_at: string;
   used: boolean;
   created_at: string;
