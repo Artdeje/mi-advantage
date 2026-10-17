@@ -222,36 +222,25 @@ export default function AdminDashboard({
   const [customFromDate, setCustomFromDate] = useState("");
   const [customToDate, setCustomToDate] = useState("");
 
-  // Load all admin data. Reads run independently and each result is applied the
-  // moment it lands, so the member-card list is NEVER blocked behind the
-  // image-heavy shop list (base64 logos can be several MB and take seconds).
+  // Load all admin data
   const loadData = async () => {
     try {
+      const listShops = await db.getShops();
+      const listCustomers = await db.getCustomers();
+      const listSales = await db.getSales();
+      const listLogs = await db.getAuditLogs();
+      const currentCust = await db.getCustomization();
+      const listAdmins = await db.getAdmins();
+
+      setShops(listShops);
+      setCustomers(listCustomers);
+      setSales(listSales);
+      setLogs(listLogs);
+      setCustomization(currentCust);
+      setAdminsList(listAdmins);
+
       const authUser = db.currentUser;
       setCurrentAdminRole((authUser?.admin_role as 'super_admin' | 'admin') || 'admin');
-
-      // Lightweight tables first — these unblock the Members / Reports / Logs UI.
-      db.getCustomers()
-        .then(setCustomers)
-        .catch((err) => console.error("AdminDashboard customers load failed:", err));
-      db.getSales()
-        .then(setSales)
-        .catch((err) => console.error("AdminDashboard sales load failed:", err));
-      db.getAuditLogs()
-        .then(setLogs)
-        .catch((err) => console.error("AdminDashboard logs load failed:", err));
-      db.getAdmins()
-        .then(setAdminsList)
-        .catch((err) => console.error("AdminDashboard admins load failed:", err));
-
-      // Heaviest table (shop logos) loads in parallel and renders when ready.
-      db.getShops()
-        .then(setShops)
-        .catch((err) => console.error("AdminDashboard shops load failed:", err));
-
-      const currentCust = await db.getCustomization();
-      if (!currentCust) return;
-      setCustomization(currentCust);
 
       // Seed form customizations
       setTitleInput(currentCust.title);

@@ -3,29 +3,39 @@ import {
   db,
   getCustomerCardBlockReason,
   extractScanCode,
+  buildShopUrl,
   BUSINESS_TYPE_LABELS,
   DISCOUNT_SCOPE_LABELS,
 } from '../lib/supabase';
 import { Customer, Shop } from '../types';
-import { QrCode, Camera, RefreshCw, ShoppingBag, CheckCircle2, AlertTriangle, User, ShoppingCart, Store } from './AdminIcons';
+import {
+  QrCode,
+  Camera,
+  RefreshCw,
+  ShoppingBag,
+  CheckCircle2,
+  AlertTriangle,
+  User,
+  ShoppingCart,
+  Store,
+} from './AdminIcons';
 import GuestShoppingPanel from './GuestShoppingPanel';
 import ThemeToggle from './ThemeToggle';
 import { Html5Qrcode } from 'html5-qrcode';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }) {
-  // A logged-in shop gets the full transaction terminal; everyone else
-  // (an external phone camera / guest) gets the partner directory after a scan.
-  const isShopSession = db.currentUser?.role === 'shop';
-
   // Database states
   const [shops, setShops] = useState<Shop[]>([]);
   const [selectedShopId, setSelectedShopId] = useState('');
   const [portalMode, setPortalMode] = useState<'member' | 'guest'>('member');
-  // Deep-link ?shop=SHOP-1001 (from a scanned counter QR) pre-selects the shop.
-  const [pendingShopCode, setPendingShopCode] = useState('');
+  // A logged-in shop gets the full transaction terminal; everyone else (an
+  // external phone camera / guest) gets the partner directory after a scan.
+  const isShopSession = db.currentUser?.role === 'shop';
   // External scanner result: show the partner directory instead of a form.
   const [showPartners, setShowPartners] = useState(false);
+  // Deep link ?shop=SHOP-1001 (from a scanned counter QR) pre-selects the shop.
+  const [pendingShopCode, setPendingShopCode] = useState('');
   
   // Scanned customer state
   const [scannedCustomer, setScannedCustomer] = useState<Customer | null>(null);
@@ -83,9 +93,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     loadDatabaseData();
   }, []);
 
-  // Deep link: read ?shop=… from the hash once (HashRouter keeps the query in
-  // window.location.hash), then resolve it against the loaded shop list so a
-  // scanned counter QR opens with that shop already filled in.
+  // Deep link: read ?shop=… once from the hash, then resolve it against the
+  // loaded shop list so a scanned counter QR opens with that shop filled in.
   useEffect(() => {
     const readShopCode = () => {
       const h = window.location.hash || '';
@@ -277,30 +286,23 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         // Card validity is disabled the moment the expiration date/time is reached.
         // The ONLY message shown is the block reason ("Renew your subscription").
         const blockReason = getCustomerCardBlockReason(customer);
+        if (blockReason) {
+          setScanErrorState(blockReason);
+          setScannedCustomer(null);
+          setScanDone(false);
+          alert(blockReason);
+          return;
+        }
 
+        setScanErrorState(null);
+        setScannedCustomer(customer);
+        setScanDone(true);
+        await stopCameraScanner();
         if (isShopSession) {
-          // Shop terminal: a blocked card cannot earn a discount here.
-          if (blockReason) {
-            setScanErrorState(blockReason);
-            setScannedCustomer(null);
-            setScanDone(false);
-            alert(blockReason);
-            return;
-          }
-          setScanErrorState(null);
-          setScannedCustomer(customer);
-          setScanDone(true);
-          await stopCameraScanner();
-          // Jump to the discount form (customer ID auto-filled).
+          // Shop terminal: jump to the discount form (customer ID auto-filled).
           scrollToDiscountForm();
         } else {
-          // External scan (phone / any other device): ALWAYS reveal the member's
-          // partner directory. The card's state is reported inline rather than
-          // blocking the page with an alert, so the partner list always shows.
-          setScanErrorState(blockReason);
-          setScannedCustomer(blockReason ? null : customer);
-          setScanDone(!blockReason);
-          await stopCameraScanner();
+          // External scan (phone / other): show the member's partner directory.
           setShowPartners(true);
           setTimeout(() => {
             document
@@ -444,46 +446,26 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       </div>
 
       {portalMode === 'member' ? (
-        showPartners ? (
+        showPartners && scannedCustomer ? (
           <div id="member-partners-panel" className="space-y-6 scroll-mt-6">
-            {/* Member banner — verified state, or a gentle notice when the scanned
-                card has no active membership (partners are still shown below). */}
-            {scannedCustomer ? (
-              <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
-                <span className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shrink-0">
-                  {scannedCustomer.name.charAt(0).toUpperCase()}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Member card verified</p>
-                  <p className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">{scannedCustomer.name}</p>
-                  <p className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300">{scannedCustomer.qr_code}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); setScanErrorState(null); }}
-                  className="shrink-0 px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer"
-                >
-                  Scan another
-                </button>
+            {/* Verified member banner */}
+            <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
+              <span className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shrink-0">
+                {scannedCustomer.name.charAt(0).toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Member card verified</p>
+                <p className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">{scannedCustomer.name}</p>
+                <p className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300">{scannedCustomer.qr_code}</p>
               </div>
-            ) : (
-              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
-                <span className="w-12 h-12 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
-                  <Store className="w-6 h-6" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">Membership not active</p>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">{scanErrorState || 'This card is not currently active — contact the administrator.'}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); setScanErrorState(null); }}
-                  className="shrink-0 px-3 py-2 bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer"
-                >
-                  Try another
-                </button>
-              </div>
-            )}
+              <button
+                type="button"
+                onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); }}
+                className="shrink-0 px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer"
+              >
+                Scan another
+              </button>
+            </div>
 
             {/* Partner directory */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 md:p-6">

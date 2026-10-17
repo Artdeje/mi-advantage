@@ -25,85 +25,53 @@ import {
 let customerV3ColumnsReady: boolean | null = null;
 let customerV4ColumnsReady: boolean | null = null;
 let customerV5ColumnsReady: boolean | null = null;
-let customerV6ColumnsReady: boolean | null = null;
+  let customerV6ColumnsReady: boolean | null = null;
+  let shopV7ColumnsReady: boolean | null = null;
 
-async function areCustomerV3ColumnsReady(): Promise<boolean> {
-  if (customerV3ColumnsReady !== null) return customerV3ColumnsReady;
-  try {
-    const { error } = await getSupabase()
-      .from("customers")
-      .select("customer_type")
-      .limit(1);
-    customerV3ColumnsReady = !error;
-  } catch {
-    customerV3ColumnsReady = false;
+  async function areShopV7ColumnsReady(): Promise<boolean> {
+    if (shopV7ColumnsReady !== null) return shopV7ColumnsReady;
+    try {
+      const { error } = await getSupabase()
+        .from("shops")
+        .select("business_type")
+        .limit(1);
+      shopV7ColumnsReady = !error;
+    } catch {
+      shopV7ColumnsReady = false;
+    }
+    return shopV7ColumnsReady;
   }
-  return customerV3ColumnsReady;
-}
 
-async function areCustomerV4ColumnsReady(): Promise<boolean> {
-  if (customerV4ColumnsReady !== null) return customerV4ColumnsReady;
-  try {
-    const { error } = await getSupabase()
-      .from("customers")
-      .select("referee_number,card_status")
-      .limit(1);
-    customerV4ColumnsReady = !error;
-  } catch {
-    customerV4ColumnsReady = false;
+  const PAGE_SIZE = 1000;
+  async function fetchAllPaged<T>(
+    table: string,
+    orderCol: string,
+    ascending: boolean,
+    applyFilters?: (q: any) => any,
+  ): Promise<T[]> {
+    const all: T[] = [];
+    for (let from = 0; from <= 500000; from += PAGE_SIZE) {
+      try {
+        let q: any = getSupabase()
+          .from(table)
+          .select("*")
+          .order(orderCol, { ascending });
+        if (applyFilters) q = applyFilters(q);
+        const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
+        if (error || !data) break;
+        const batch = data as T[];
+        all.push(...batch);
+        if (batch.length < PAGE_SIZE) break;
+      } catch {
+        break;
+      }
+    }
+    return all;
   }
-  return customerV4ColumnsReady;
-}
-
-async function areCustomerV5ColumnsReady(): Promise<boolean> {
-  if (customerV5ColumnsReady !== null) return customerV5ColumnsReady;
-  try {
-    const { error } = await getSupabase()
-      .from("customers")
-      .select("credit_status")
-      .limit(1);
-    customerV5ColumnsReady = !error;
-  } catch {
-    customerV5ColumnsReady = false;
-  }
-  return customerV5ColumnsReady;
-}
-
-// v6: subscription_status (mysql-migration-selfreg.sql)
-async function areCustomerV6ColumnsReady(): Promise<boolean> {
-  if (customerV6ColumnsReady !== null) return customerV6ColumnsReady;
-  try {
-    const { error } = await getSupabase()
-      .from("customers")
-      .select("subscription_status")
-      .limit(1);
-    customerV6ColumnsReady = !error;
-  } catch {
-    customerV6ColumnsReady = false;
-  }
-  return customerV6ColumnsReady;
-}
-
-// v7: shops.business_type / shops.discount_scope (supabase-migration-shop-fields.sql)
-// Falls back gracefully: when missing, shop create/update simply omits them.
-let shopV7ColumnsReady: boolean | null = null;
-async function areShopV7ColumnsReady(): Promise<boolean> {
-  if (shopV7ColumnsReady !== null) return shopV7ColumnsReady;
-  try {
-    const { error } = await getSupabase()
-      .from("shops")
-      .select("business_type,discount_scope")
-      .limit(1);
-    shopV7ColumnsReady = !error;
-  } catch {
-    shopV7ColumnsReady = false;
-  }
-  return shopV7ColumnsReady;
-}
 
 // Pull a CUST-###/SHOP-#### token out of any scanned payload — a bare code, a
-// referral link (?ref=), or a shop deep link (?shop=). Never resolves a
-// partial match: returns the first full token, or the trimmed text uppercased.
+// referral link (?ref=), or a shop deep link (?shop=). Returns the first full
+// token uppercased, or the trimmed text uppercased when no token matches.
 export function extractScanCode(raw: string): string {
   const text = (raw || "").trim();
   if (!text) return "";
@@ -161,34 +129,61 @@ export function normalizeDiscountScope(v?: string): string {
   return (DISCOUNT_SCOPES as readonly string[]).includes(s) ? s : "all";
 }
 
-// PostgREST caps every response at the project "Max Rows" (1000), so a plain
-// select past row 1000 silently truncates. Walk the table in 1000-row pages so
-// the admin sees EVERY issued card / shop / sale, not just the newest 1000.
-const PAGE_SIZE = 1000;
-async function fetchAllPaged<T>(
-  table: string,
-  orderCol: string,
-  ascending: boolean,
-  applyFilters?: (q: any) => any,
-): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; from <= 500000; from += PAGE_SIZE) {
-    try {
-      let q: any = getSupabase()
-        .from(table)
-        .select("*")
-        .order(orderCol, { ascending });
-      if (applyFilters) q = applyFilters(q);
-      const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
-      if (error || !data) break;
-      const batch = data as T[];
-      all.push(...batch);
-      if (batch.length < PAGE_SIZE) break;
-    } catch {
-      break;
-    }
+async function areCustomerV3ColumnsReady(): Promise<boolean> {
+  if (customerV3ColumnsReady !== null) return customerV3ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("customers")
+      .select("customer_type")
+      .limit(1);
+    customerV3ColumnsReady = !error;
+  } catch {
+    customerV3ColumnsReady = false;
   }
-  return all;
+  return customerV3ColumnsReady;
+}
+
+async function areCustomerV4ColumnsReady(): Promise<boolean> {
+  if (customerV4ColumnsReady !== null) return customerV4ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("customers")
+      .select("referee_number,card_status")
+      .limit(1);
+    customerV4ColumnsReady = !error;
+  } catch {
+    customerV4ColumnsReady = false;
+  }
+  return customerV4ColumnsReady;
+}
+
+async function areCustomerV5ColumnsReady(): Promise<boolean> {
+  if (customerV5ColumnsReady !== null) return customerV5ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("customers")
+      .select("credit_status")
+      .limit(1);
+    customerV5ColumnsReady = !error;
+  } catch {
+    customerV5ColumnsReady = false;
+  }
+  return customerV5ColumnsReady;
+}
+
+// v6: subscription_status (mysql-migration-selfreg.sql)
+async function areCustomerV6ColumnsReady(): Promise<boolean> {
+  if (customerV6ColumnsReady !== null) return customerV6ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("customers")
+      .select("subscription_status")
+      .limit(1);
+    customerV6ColumnsReady = !error;
+  } catch {
+    customerV6ColumnsReady = false;
+  }
+  return customerV6ColumnsReady;
 }
 
 // Single source of truth for a card's current status.
@@ -565,12 +560,7 @@ export class SupabaseDatabaseService {
   }
 
   async getShops(): Promise<Shop[]> {
-    try {
-      return await fetchAllPaged<Shop>("shops", "created_at", true);
-    } catch (e) {
-      console.warn("Supabase shops fetch failed:", e);
-      return [];
-    }
+    return fetchAllPaged<Shop>("shops", "created_at", true);
   }
 
   // Generate a unique public guest-scan code (SHOP-####) for a shop.
@@ -589,7 +579,6 @@ export class SupabaseDatabaseService {
 
   // Public guest lookup: find an approved shop by its QR code (exact match).
   // Safe for unauthenticated use — getShops() is a public endpoint.
-  // Accepts a bare code (SHOP-1001) or a deep-link URL (?shop=SHOP-1001).
   async getShopByQRCode(qrCode: string): Promise<Shop | null> {
     const clean = extractScanCode(qrCode);
     if (!clean) return null;
@@ -642,17 +631,9 @@ export class SupabaseDatabaseService {
 
   // ---- Product / menu catalog (per shop) ----
   async getProducts(shopId?: string): Promise<Product[]> {
-    try {
-      return await fetchAllPaged<Product>(
-        "products",
-        "created_at",
-        false,
-        shopId ? (q) => q.eq("shop_id", shopId) : undefined,
-      );
-    } catch (e) {
-      console.warn("Supabase products fetch failed:", e);
-      return [];
-    }
+    return fetchAllPaged<Product>("products", "created_at", false, (q) =>
+      shopId ? q.eq("shop_id", shopId) : q,
+    );
   }
 
   async createProduct(
@@ -1089,8 +1070,6 @@ export class SupabaseDatabaseService {
   }
 
   async getCustomers(): Promise<Customer[]> {
-    // Page through EVERY customer row — without this, PostgREST's 1000-row cap
-    // hides cards older than the newest 1000.
     let data: Customer[] | null = null;
     try {
       data = await fetchAllPaged<Customer>("customers", "created_at", false);
@@ -1388,41 +1367,43 @@ export class SupabaseDatabaseService {
     const clean = extractScanCode(qrCode);
     if (!clean) return null;
     try {
-      // 1) Deterministic EXACT match first — no substring, no unordered pick.
-      let match: Customer | null = null;
-      const { data: exact } = await getSupabase()
+      // Exact match first — prevents partial scans from resolving to the wrong card.
+      const { data: exact, error: exactError } = await getSupabase()
         .from("customers")
         .select("*")
         .eq("qr_code", clean)
         .maybeSingle();
-      if (exact) match = exact as Customer;
-
-      // 2) Fallback for legacy mixed-case codes: substring scan, then keep ONLY
-      //    the row whose code equals the scanned token — a partial scan can
-      //    never resolve to the wrong member.
-      if (!match) {
-        const { data: rows, error } = await getSupabase()
-          .from("customers")
-          .select("*")
-          .ilike("qr_code", clean)
-          .limit(50);
-        if (!error && rows) {
-          match =
-            (rows as Customer[]).find(
-              (r) => (r.qr_code || "").trim().toLowerCase() === clean.toLowerCase(),
-            ) || null;
+      if (!exactError && exact) {
+        const customer = await this.reconcileCustomerStatus(exact as Customer);
+        await this.addLog(
+          "QR Code Scanned",
+          "System",
+          "scanner",
+          `Scan completed successfully for ${customer.name}.`,
+        );
+        return customer;
+      }
+      // Fallback: substring match only when it resolves to exactly one card.
+      const { data, error } = await getSupabase()
+        .from("customers")
+        .select("*")
+        .ilike("qr_code", `%${clean}%`)
+        .limit(50);
+      if (!error && data) {
+        const match = (data as Customer[]).find(
+          (c) => (c.qr_code || "").toLowerCase() === clean.toLowerCase(),
+        );
+        if (match) {
+          const customer = await this.reconcileCustomerStatus(match);
+          await this.addLog(
+            "QR Code Scanned",
+            "System",
+            "scanner",
+            `Scan completed successfully for ${customer.name}.`,
+          );
+          return customer;
         }
       }
-      if (!match) return null;
-
-      const customer = await this.reconcileCustomerStatus(match);
-      await this.addLog(
-        "QR Code Scanned",
-        "System",
-        "scanner",
-        `Scan completed successfully for ${customer.name}.`,
-      );
-      return customer;
     } catch (e) {
       console.warn("Supabase customer scan fetch failed:", e);
     }
@@ -1430,12 +1411,7 @@ export class SupabaseDatabaseService {
   }
 
   async getSales(): Promise<Sale[]> {
-    try {
-      return await fetchAllPaged<Sale>("sales", "created_at", false);
-    } catch (e) {
-      console.warn("Supabase sales fetch failed:", e);
-      return [];
-    }
+    return fetchAllPaged<Sale>("sales", "created_at", false);
   }
 
   async createSale(
@@ -1495,12 +1471,7 @@ export class SupabaseDatabaseService {
   }
 
   async getAuditLogs(): Promise<AuditLog[]> {
-    try {
-      return await fetchAllPaged<AuditLog>("audit_logs", "created_at", false);
-    } catch (e) {
-      console.warn("Supabase logs fetch failed:", e);
-      return [];
-    }
+    return fetchAllPaged<AuditLog>("audit_logs", "created_at", false);
   }
 
   async addLog(

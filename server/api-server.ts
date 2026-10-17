@@ -132,8 +132,8 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   if (req.method === "GET" && req.path === "/api/db/customization") { next(); return; }
   // Allow unauthenticated GET to shops (public partner list for CustomerPortal)
   if (req.method === "GET" && req.path === "/api/db/shops" && !req.query.single) { next(); return; }
-  // Allow unauthenticated customer QR lookup (exact qr_code or substring qr_code_ilike)
-  if (req.method === "GET" && req.path === "/api/db/customers" && (req.query.qr_code || req.query.qr_code_ilike)) { next(); return; }
+  // Allow unauthenticated customer QR lookup
+  if (req.method === "GET" && req.path === "/api/db/customers" && req.query.qr_code_ilike) { next(); return; }
   // Allow unauthenticated POST to customers (for CustomerPortal QR scan logging)
   if (req.method === "POST" && req.path === "/api/db/customers") { next(); return; }
   // Allow unauthenticated POST to sales (for CustomerPortal transaction creation)
