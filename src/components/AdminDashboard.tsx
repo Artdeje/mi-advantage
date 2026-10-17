@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { db, getCustomerCardStatus } from "../lib/supabase";
+import {
+  db,
+  getCustomerCardStatus,
+  buildShopUrl,
+  BUSINESS_TYPES,
+  BUSINESS_TYPE_LABELS,
+  DISCOUNT_SCOPES,
+  DISCOUNT_SCOPE_LABELS,
+} from "../lib/supabase";
 import { Shop, Customer, Sale, AuditLog, Customization, Admin } from "../types";
 import {
   Plus,
@@ -138,6 +146,8 @@ export default function AdminDashboard({
   const [shopDiscount, setShopDiscount] = useState<number | "">("");
   const [shopEmail, setShopEmail] = useState("");
   const [shopDescription, setShopDescription] = useState("");
+  const [shopBusinessType, setShopBusinessType] = useState("retail");
+  const [shopDiscountScope, setShopDiscountScope] = useState("all");
   const [shopPassword, setShopPassword] = useState("");
   const [shopMsg, setShopMsg] = useState("");
 
@@ -290,6 +300,8 @@ export default function AdminDashboard({
           discount_percent: Number(shopDiscount),
           email: shopEmail,
           description: shopDescription.trim(),
+          business_type: shopBusinessType,
+          discount_scope: shopDiscountScope,
           ...(shopPassword ? { password: shopPassword } : {}),
         });
         if (error) {
@@ -311,6 +323,8 @@ export default function AdminDashboard({
           shopEmail,
           shopPassword,
           shopDescription,
+          shopBusinessType,
+          shopDiscountScope,
         );
         if (error) {
           setShopMsg(error);
@@ -332,6 +346,8 @@ export default function AdminDashboard({
     setShopEmail("");
     setShopPassword("");
     setShopDescription("");
+    setShopBusinessType("retail");
+    setShopDiscountScope("all");
     setShopModalOpen(false);
   };
 
@@ -342,6 +358,8 @@ export default function AdminDashboard({
     setShopEmail(shop.email);
     setShopPassword(""); // leave blank unless changing
     setShopDescription(shop.description || "");
+    setShopBusinessType(shop.business_type || "retail");
+    setShopDiscountScope(shop.discount_scope || "all");
     setShopModalOpen(true);
   };
 
@@ -1781,6 +1799,41 @@ export default function AdminDashboard({
                     onChange={(e) => setShopDescription(e.target.value)}
                     className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-semibold resize-y"
                   />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">
+                      Business Type
+                    </label>
+                    <select
+                      value={shopBusinessType}
+                      onChange={(e) => setShopBusinessType(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-semibold"
+                    >
+                      {BUSINESS_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {BUSINESS_TYPE_LABELS[t]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">
+                      Discount Applies To
+                    </label>
+                    <select
+                      value={shopDiscountScope}
+                      onChange={(e) => setShopDiscountScope(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-semibold"
+                    >
+                      {DISCOUNT_SCOPES.map((s) => (
+                        <option key={s} value={s}>
+                          {DISCOUNT_SCOPE_LABELS[s]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div>
@@ -3606,13 +3659,15 @@ export default function AdminDashboard({
               <div>
                 <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">{qrModalShop.shop_name}</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Guests scan this code at the Scan page to unlock {qrModalShop.discount_percent}% off with a shopping cart and receipt — no shop scan needed.
+                  Printing &amp; posting this at the counter: scanning it opens the Scan page with{" "}
+                  <strong>{qrModalShop.shop_name}</strong> already selected, so a member&apos;s{" "}
+                  {qrModalShop.discount_percent}% discount is filled in for the cashier.
                 </p>
               </div>
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 inline-block mx-auto">
                 <QRCodeCanvas
                   id="shop-qr-canvas"
-                  value={qrModalShop.qr_code || qrModalShop.id}
+                  value={buildShopUrl(qrModalShop.qr_code || qrModalShop.id)}
                   size={200}
                   level="M"
                   includeMargin

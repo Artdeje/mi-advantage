@@ -35,6 +35,8 @@ export interface Shop {
   profile_picture?: string;
   qr_code?: string; // public guest-scan code (e.g., "SHOP-1001")
   description?: string; // partner business blurb for the join-page carousel
+  business_type?: string; // 'retail' | 'restaurant' | 'cafe' | 'hotel' | 'services' | 'other'
+  discount_scope?: string; // 'all' | 'drinks' | 'food' | 'rooms' | 'services'
   status?: 'pending' | 'approved' | 'rejected';
   contract?: string;
   rdb_certificate?: string;

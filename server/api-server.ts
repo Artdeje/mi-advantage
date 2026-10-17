@@ -132,8 +132,8 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   if (req.method === "GET" && req.path === "/api/db/customization") { next(); return; }
   // Allow unauthenticated GET to shops (public partner list for CustomerPortal)
   if (req.method === "GET" && req.path === "/api/db/shops" && !req.query.single) { next(); return; }
-  // Allow unauthenticated customer QR lookup
-  if (req.method === "GET" && req.path === "/api/db/customers" && req.query.qr_code_ilike) { next(); return; }
+  // Allow unauthenticated customer QR lookup (exact qr_code or substring qr_code_ilike)
+  if (req.method === "GET" && req.path === "/api/db/customers" && (req.query.qr_code || req.query.qr_code_ilike)) { next(); return; }
   // Allow unauthenticated POST to customers (for CustomerPortal QR scan logging)
   if (req.method === "POST" && req.path === "/api/db/customers") { next(); return; }
   // Allow unauthenticated POST to sales (for CustomerPortal transaction creation)
@@ -670,7 +670,7 @@ app.get("/api/db/:table", async (req, res) => {
   if (!validateTable(table)) { res.status(400).json({ error: "Invalid table" }); return; }
   try {
     let q = getDb().from(table).select("*");
-    const metaKeys = new Set(["order", "ascending", "limit", "single", "select"]);
+    const metaKeys = new Set(["order", "ascending", "limit", "offset", "single", "select"]);
     const filters = Object.entries(req.query).filter(([k]) => !metaKeys.has(k));
     for (const [key, value] of filters) {
       const v = String(value);
@@ -695,10 +695,21 @@ app.get("/api/db/:table", async (req, res) => {
       q = q.order(orderCol, { ascending: req.query.ascending === "true" });
     }
     const limit = req.query.limit as string;
+    const offset = req.query.offset as string;
+    let lim = 1000;
     if (limit) {
       const n = parseInt(limit, 10);
       if (!Number.isFinite(n) || n <= 0 || n > 1000) { res.status(400).json({ error: "Invalid limit (1-1000)." }); return; }
-      q = q.limit(n);
+      lim = n;
+    }
+    if (offset) {
+      const o = parseInt(offset, 10);
+      if (!Number.isFinite(o) || o < 0 || o > 1000000) { res.status(400).json({ error: "Invalid offset (0-1000000)." }); return; }
+      // PostgREST caps a single response at 1000 rows, so paging via Range
+      // is the only way to walk past the first 1000 (e.g. >1000 member cards).
+      q = q.range(o, o + lim - 1);
+    } else if (limit) {
+      q = q.limit(lim);
     }
     const { data: rows, error } = await q;
     if (error) throw error;

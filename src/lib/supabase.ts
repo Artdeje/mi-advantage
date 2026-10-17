@@ -84,6 +84,113 @@ async function areCustomerV6ColumnsReady(): Promise<boolean> {
   return customerV6ColumnsReady;
 }
 
+// v7: shops.business_type / shops.discount_scope (supabase-migration-shop-fields.sql)
+// Falls back gracefully: when missing, shop create/update simply omits them.
+let shopV7ColumnsReady: boolean | null = null;
+async function areShopV7ColumnsReady(): Promise<boolean> {
+  if (shopV7ColumnsReady !== null) return shopV7ColumnsReady;
+  try {
+    const { error } = await getSupabase()
+      .from("shops")
+      .select("business_type,discount_scope")
+      .limit(1);
+    shopV7ColumnsReady = !error;
+  } catch {
+    shopV7ColumnsReady = false;
+  }
+  return shopV7ColumnsReady;
+}
+
+// Pull a CUST-###/SHOP-#### token out of any scanned payload — a bare code, a
+// referral link (?ref=), or a shop deep link (?shop=). Never resolves a
+// partial match: returns the first full token, or the trimmed text uppercased.
+export function extractScanCode(raw: string): string {
+  const text = (raw || "").trim();
+  if (!text) return "";
+  const token = text.match(/(?:CUST|SHOP)-\d{2,}/i);
+  if (token) return token[0].toUpperCase();
+  const queryIndex = text.indexOf("?");
+  if (queryIndex >= 0) {
+    try {
+      const params = new URLSearchParams(text.slice(queryIndex + 1));
+      const p = params.get("shop") || params.get("ref") || params.get("code");
+      if (p) return decodeURIComponent(p).trim().toUpperCase();
+    } catch {
+      /* not a query string — fall through */
+    }
+  }
+  return text.toUpperCase();
+}
+
+// Deep link encoded into a shop counter QR. Scanning it with any phone camera
+// opens the scan terminal with that shop pre-selected (fills the discount form).
+export function buildShopUrl(code: string): string {
+  const base = `${window.location.origin}${window.location.pathname}#/scan`;
+  return code ? `${base}?shop=${encodeURIComponent(code)}` : base;
+}
+
+// Shop business category + which catalog the discount covers. Used by the shop
+// registration form, the admin Add-Shop modal, and the scan terminals.
+export const BUSINESS_TYPES = ["retail", "restaurant", "cafe", "hotel", "services", "other"] as const;
+export const DISCOUNT_SCOPES = ["all", "drinks", "food", "rooms", "services"] as const;
+
+export const BUSINESS_TYPE_LABELS: Record<string, string> = {
+  retail: "Retail / Shop",
+  restaurant: "Restaurant",
+  cafe: "Cafe / Bar",
+  hotel: "Hotel / Lodging",
+  services: "Services",
+  other: "Other",
+};
+
+export const DISCOUNT_SCOPE_LABELS: Record<string, string> = {
+  all: "All items",
+  drinks: "Drinks only",
+  food: "Food only",
+  rooms: "Rooms only",
+  services: "Services only",
+};
+
+export function normalizeBusinessType(v?: string): string {
+  const s = (v || "").toLowerCase().trim();
+  return (BUSINESS_TYPES as readonly string[]).includes(s) ? s : "retail";
+}
+
+export function normalizeDiscountScope(v?: string): string {
+  const s = (v || "").toLowerCase().trim();
+  return (DISCOUNT_SCOPES as readonly string[]).includes(s) ? s : "all";
+}
+
+// PostgREST caps every response at the project "Max Rows" (1000), so a plain
+// select past row 1000 silently truncates. Walk the table in 1000-row pages so
+// the admin sees EVERY issued card / shop / sale, not just the newest 1000.
+const PAGE_SIZE = 1000;
+async function fetchAllPaged<T>(
+  table: string,
+  orderCol: string,
+  ascending: boolean,
+  applyFilters?: (q: any) => any,
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0; from <= 500000; from += PAGE_SIZE) {
+    try {
+      let q: any = getSupabase()
+        .from(table)
+        .select("*")
+        .order(orderCol, { ascending });
+      if (applyFilters) q = applyFilters(q);
+      const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
+      if (error || !data) break;
+      const batch = data as T[];
+      all.push(...batch);
+      if (batch.length < PAGE_SIZE) break;
+    } catch {
+      break;
+    }
+  }
+  return all;
+}
+
 // Single source of truth for a card's current status.
 // A card whose expiration date/time has been REACHED is immediately marked for
 // renewal and is never accessible at scan terminals. 'expired' is treated as a
@@ -459,15 +566,11 @@ export class SupabaseDatabaseService {
 
   async getShops(): Promise<Shop[]> {
     try {
-      const { data, error } = await getSupabase()
-        .from("shops")
-        .select("*")
-        .order("created_at", { ascending: true });
-      if (!error && data) return data as Shop[];
+      return await fetchAllPaged<Shop>("shops", "created_at", true);
     } catch (e) {
       console.warn("Supabase shops fetch failed:", e);
+      return [];
     }
-    return [];
   }
 
   // Generate a unique public guest-scan code (SHOP-####) for a shop.
@@ -486,8 +589,9 @@ export class SupabaseDatabaseService {
 
   // Public guest lookup: find an approved shop by its QR code (exact match).
   // Safe for unauthenticated use — getShops() is a public endpoint.
+  // Accepts a bare code (SHOP-1001) or a deep-link URL (?shop=SHOP-1001).
   async getShopByQRCode(qrCode: string): Promise<Shop | null> {
-    const clean = qrCode.trim();
+    const clean = extractScanCode(qrCode);
     if (!clean) return null;
     const shops = await this.getShops();
     const match =
@@ -539,17 +643,16 @@ export class SupabaseDatabaseService {
   // ---- Product / menu catalog (per shop) ----
   async getProducts(shopId?: string): Promise<Product[]> {
     try {
-      let query = getSupabase()
-        .from("products")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (shopId) query = query.eq("shop_id", shopId);
-      const { data, error } = await query;
-      if (!error && data) return data as Product[];
+      return await fetchAllPaged<Product>(
+        "products",
+        "created_at",
+        false,
+        shopId ? (q) => q.eq("shop_id", shopId) : undefined,
+      );
     } catch (e) {
       console.warn("Supabase products fetch failed:", e);
+      return [];
     }
-    return [];
   }
 
   async createProduct(
@@ -666,6 +769,8 @@ export class SupabaseDatabaseService {
     email: string,
     pass: string,
     description?: string,
+    businessType?: string,
+    discountScope?: string,
   ): Promise<{ shop: Shop | null; error: string | null }> {
     const currentShops = await this.getShops();
     if (
@@ -686,6 +791,10 @@ export class SupabaseDatabaseService {
       email_verified: true,
       created_at: new Date().toISOString(),
     };
+    if (await areShopV7ColumnsReady()) {
+      newShop.business_type = normalizeBusinessType(businessType);
+      newShop.discount_scope = normalizeDiscountScope(discountScope);
+    }
 
     try {
       const { error } = await getSupabase().from("shops").insert([newShop]);
@@ -710,6 +819,9 @@ export class SupabaseDatabaseService {
     pass: string,
     contract: string,
     rdbCertificate: string,
+    businessType?: string,
+    discountScope?: string,
+    description?: string,
   ): Promise<{ success: boolean; emailSent: boolean; error: string | null }> {
     const cleanEmail = email.toLowerCase().trim();
 
@@ -736,12 +848,17 @@ export class SupabaseDatabaseService {
       email: cleanEmail,
       password: pass,
       qr_code: await this.generateUniqueShopQRCode(),
+      description: description?.trim() || undefined,
       status: "pending",
       contract: contract || undefined,
       rdb_certificate: rdbCertificate || undefined,
       email_verified: false,
       created_at: new Date().toISOString(),
     };
+    if (await areShopV7ColumnsReady()) {
+      newShop.business_type = normalizeBusinessType(businessType);
+      newShop.discount_scope = normalizeDiscountScope(discountScope);
+    }
 
     const { error: insertError } = await getSupabase()
       .from("shops")
@@ -890,9 +1007,21 @@ export class SupabaseDatabaseService {
     updates: Partial<Shop>,
   ): Promise<{ shop: Shop | null; error: string | null }> {
     try {
+      const patch: Partial<Shop> = { ...updates };
+      // Drop the v7 fields when their columns are missing so a plain shop edit
+      // never fails on an un-migrated database.
+      if (await areShopV7ColumnsReady()) {
+        if (patch.business_type !== undefined)
+          patch.business_type = normalizeBusinessType(patch.business_type);
+        if (patch.discount_scope !== undefined)
+          patch.discount_scope = normalizeDiscountScope(patch.discount_scope);
+      } else {
+        delete patch.business_type;
+        delete patch.discount_scope;
+      }
       const { data, error } = await getSupabase()
         .from("shops")
-        .update(updates)
+        .update(patch)
         .eq("id", id)
         .select()
         .single();
@@ -960,13 +1089,11 @@ export class SupabaseDatabaseService {
   }
 
   async getCustomers(): Promise<Customer[]> {
+    // Page through EVERY customer row — without this, PostgREST's 1000-row cap
+    // hides cards older than the newest 1000.
     let data: Customer[] | null = null;
     try {
-      const { data: d, error } = await getSupabase()
-        .from("customers")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && d) data = d as Customer[];
+      data = await fetchAllPaged<Customer>("customers", "created_at", false);
     } catch (e) {
       console.warn("Supabase customers fetch failed:", e);
     }
@@ -1258,29 +1385,44 @@ export class SupabaseDatabaseService {
   }
 
   async getCustomerByQRCode(qrCode: string): Promise<Customer | null> {
+    const clean = extractScanCode(qrCode);
+    if (!clean) return null;
     try {
-      const { data, error } = await getSupabase()
+      // 1) Deterministic EXACT match first — no substring, no unordered pick.
+      let match: Customer | null = null;
+      const { data: exact } = await getSupabase()
         .from("customers")
         .select("*")
-        .ilike("qr_code", qrCode)
+        .eq("qr_code", clean)
         .maybeSingle();
-      if (!error && data) {
-        // The server matches substrings — only accept the exact card code
-        // so a partial scan can never resolve to the wrong member.
-        if (
-          (data as Customer).qr_code?.toLowerCase() !== qrCode.trim().toLowerCase()
-        ) {
-          return null;
+      if (exact) match = exact as Customer;
+
+      // 2) Fallback for legacy mixed-case codes: substring scan, then keep ONLY
+      //    the row whose code equals the scanned token — a partial scan can
+      //    never resolve to the wrong member.
+      if (!match) {
+        const { data: rows, error } = await getSupabase()
+          .from("customers")
+          .select("*")
+          .ilike("qr_code", clean)
+          .limit(50);
+        if (!error && rows) {
+          match =
+            (rows as Customer[]).find(
+              (r) => (r.qr_code || "").trim().toLowerCase() === clean.toLowerCase(),
+            ) || null;
         }
-        const customer = await this.reconcileCustomerStatus(data as Customer);
-        await this.addLog(
-          "QR Code Scanned",
-          "System",
-          "scanner",
-          `Scan completed successfully for ${customer.name}.`,
-        );
-        return customer;
       }
+      if (!match) return null;
+
+      const customer = await this.reconcileCustomerStatus(match);
+      await this.addLog(
+        "QR Code Scanned",
+        "System",
+        "scanner",
+        `Scan completed successfully for ${customer.name}.`,
+      );
+      return customer;
     } catch (e) {
       console.warn("Supabase customer scan fetch failed:", e);
     }
@@ -1289,15 +1431,11 @@ export class SupabaseDatabaseService {
 
   async getSales(): Promise<Sale[]> {
     try {
-      const { data, error } = await getSupabase()
-        .from("sales")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && data) return data as Sale[];
+      return await fetchAllPaged<Sale>("sales", "created_at", false);
     } catch (e) {
       console.warn("Supabase sales fetch failed:", e);
+      return [];
     }
-    return [];
   }
 
   async createSale(
@@ -1358,15 +1496,11 @@ export class SupabaseDatabaseService {
 
   async getAuditLogs(): Promise<AuditLog[]> {
     try {
-      const { data, error } = await getSupabase()
-        .from("audit_logs")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && data) return data as AuditLog[];
+      return await fetchAllPaged<AuditLog>("audit_logs", "created_at", false);
     } catch (e) {
       console.warn("Supabase logs fetch failed:", e);
+      return [];
     }
-    return [];
   }
 
   async addLog(

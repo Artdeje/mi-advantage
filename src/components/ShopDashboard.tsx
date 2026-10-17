@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, getCustomerCardBlockReason } from '../lib/supabase';
+import { db, getCustomerCardBlockReason, buildShopUrl } from '../lib/supabase';
 import { Shop, Sale, Customer, Product } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -1219,7 +1219,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
                     {shopDetails?.qr_code ? (
                       <>
                         <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-1.5 bg-white dark:bg-slate-900 shrink-0">
-                          <QRCodeCanvas value={shopDetails.qr_code} size={84} level="M" includeMargin />
+                          <QRCodeCanvas value={buildShopUrl(shopDetails.qr_code || shopDetails.id)} size={84} level="M" includeMargin />
                         </div>
                         <div className="min-w-0">
                           <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">My counter QR • active</p>

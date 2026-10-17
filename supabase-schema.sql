@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS shops (
     profile_picture TEXT,
     qr_code TEXT UNIQUE,
     description TEXT DEFAULT '',
+    business_type TEXT NOT NULL DEFAULT 'retail',
+    discount_scope TEXT NOT NULL DEFAULT 'all',
     status TEXT NOT NULL DEFAULT 'pending',
     contract TEXT,
     rdb_certificate TEXT,

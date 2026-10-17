@@ -138,6 +138,8 @@ class QueryBuilder {
   private orderCol: string | null = null;
   private orderAsc = true;
   private limitCount: number | null = null;
+  private rangeFrom: number | null = null;
+  private rangeTo: number | null = null;
   private singleMode = false;
   private selectCols = "*";
   private operation: "select" | "insert" | "update" | "delete" | "upsert" = "select";
@@ -206,6 +208,13 @@ class QueryBuilder {
 
   limit(n: number): this {
     this.limitCount = n;
+    return this;
+  }
+
+  // Inclusive row range (PostgREST). Lets callers page past the 1000-row cap.
+  range(from: number, to: number): this {
+    this.rangeFrom = from;
+    this.rangeTo = to;
     return this;
   }
 
@@ -354,6 +363,11 @@ class QueryBuilder {
 
     if (this.limitCount !== null) {
       params.set("limit", String(this.limitCount));
+    }
+
+    if (this.rangeFrom !== null && this.rangeTo !== null) {
+      params.set("offset", String(this.rangeFrom));
+      params.set("limit", String(this.rangeTo - this.rangeFrom + 1));
     }
 
     if (this.singleMode) {

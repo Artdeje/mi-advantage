@@ -1,17 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, getCustomerCardBlockReason } from '../lib/supabase';
+import {
+  db,
+  getCustomerCardBlockReason,
+  extractScanCode,
+  BUSINESS_TYPE_LABELS,
+  DISCOUNT_SCOPE_LABELS,
+} from '../lib/supabase';
 import { Customer, Shop } from '../types';
-import { QrCode, Camera, RefreshCw, ShoppingBag, CheckCircle2, AlertTriangle, User, ShoppingCart } from './AdminIcons';
+import { QrCode, Camera, RefreshCw, ShoppingBag, CheckCircle2, AlertTriangle, User, ShoppingCart, Store } from './AdminIcons';
 import GuestShoppingPanel from './GuestShoppingPanel';
 import ThemeToggle from './ThemeToggle';
 import { Html5Qrcode } from 'html5-qrcode';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }) {
+  // A logged-in shop gets the full transaction terminal; everyone else
+  // (an external phone camera / guest) gets the partner directory after a scan.
+  const isShopSession = db.currentUser?.role === 'shop';
+
   // Database states
   const [shops, setShops] = useState<Shop[]>([]);
   const [selectedShopId, setSelectedShopId] = useState('');
   const [portalMode, setPortalMode] = useState<'member' | 'guest'>('member');
+  // Deep-link ?shop=SHOP-1001 (from a scanned counter QR) pre-selects the shop.
+  const [pendingShopCode, setPendingShopCode] = useState('');
+  // External scanner result: show the partner directory instead of a form.
+  const [showPartners, setShowPartners] = useState(false);
   
   // Scanned customer state
   const [scannedCustomer, setScannedCustomer] = useState<Customer | null>(null);
@@ -68,6 +82,39 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   useEffect(() => {
     loadDatabaseData();
   }, []);
+
+  // Deep link: read ?shop=… from the hash once (HashRouter keeps the query in
+  // window.location.hash), then resolve it against the loaded shop list so a
+  // scanned counter QR opens with that shop already filled in.
+  useEffect(() => {
+    const readShopCode = () => {
+      const h = window.location.hash || '';
+      const qi = h.indexOf('?');
+      if (qi < 0) return;
+      try {
+        const params = new URLSearchParams(h.slice(qi + 1));
+        const code = params.get('shop') || params.get('ref');
+        if (code) setPendingShopCode(extractScanCode(code));
+      } catch {
+        /* ignore malformed query */
+      }
+    };
+    readShopCode();
+    window.addEventListener('hashchange', readShopCode);
+    return () => window.removeEventListener('hashchange', readShopCode);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingShopCode || shops.length === 0) return;
+    const wanted = pendingShopCode.toLowerCase();
+    const match = shops.find((s) => (s.qr_code || '').toLowerCase() === wanted);
+    if (match) {
+      setSelectedShopId(match.id);
+      setShopAutoSelected(true);
+      setPortalMode('member');
+      setPendingShopCode('');
+    }
+  }, [pendingShopCode, shops]);
 
   // Switch between cameras
   const toggleFacingMode = async () => {
@@ -242,8 +289,18 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         setScannedCustomer(customer);
         setScanDone(true);
         await stopCameraScanner();
-        // Bring the discount-applying form (with the filled card ID) into view.
-        scrollToDiscountForm();
+        if (isShopSession) {
+          // Shop terminal: jump to the discount form (customer ID auto-filled).
+          scrollToDiscountForm();
+        } else {
+          // External scan (phone / other): show the member's partner directory.
+          setShowPartners(true);
+          setTimeout(() => {
+            document
+              .getElementById('member-partners-panel')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 150);
+        }
       } else {
         setScanErrorState(null);
         alert(`Invalid Card scanned: "${cleanCode}". Please scan a valid registered customer card.`);
@@ -380,6 +437,77 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       </div>
 
       {portalMode === 'member' ? (
+        showPartners && scannedCustomer ? (
+          <div id="member-partners-panel" className="space-y-6 scroll-mt-6">
+            {/* Verified member banner */}
+            <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
+              <span className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shrink-0">
+                {scannedCustomer.name.charAt(0).toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Member card verified</p>
+                <p className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">{scannedCustomer.name}</p>
+                <p className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300">{scannedCustomer.qr_code}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); }}
+                className="shrink-0 px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer"
+              >
+                Scan another
+              </button>
+            </div>
+
+            {/* Partner directory */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 md:p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900">
+                  <Store className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Where you get your discount</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Show this card at any partner counter to redeem.</p>
+                </div>
+              </div>
+              {shops.length === 0 ? (
+                <p className="text-xs text-slate-400 py-6 text-center">No partner shops yet — check back soon.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {shops.map((s) => (
+                    <div key={s.id} className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+                      <div className="flex items-center gap-3">
+                        {s.profile_picture ? (
+                          <img src={s.profile_picture} alt={s.shop_name} className="w-11 h-11 rounded-xl object-cover shrink-0" />
+                        ) : (
+                          <span className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0">
+                            {s.shop_name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 dark:text-slate-100 truncate">{s.shop_name}</p>
+                          <span className="inline-block mt-0.5 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{s.discount_percent}% OFF</span>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-2 min-h-[2rem]">
+                        {s.description || 'Verified Mi Advantage partner.'}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {s.business_type && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-full">
+                            {BUSINESS_TYPE_LABELS[s.business_type] || s.business_type}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900 px-2 py-0.5 rounded-full">
+                          {DISCOUNT_SCOPE_LABELS[s.discount_scope || 'all'] || 'All items'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* LEFT COLUMN: CAMERA SCANNER & SIMULATOR ACCORDION */}
@@ -605,12 +733,12 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                       }
                     }}
                     placeholder="or type shop code e.g. SHOP-1001"
-                    className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="flex-1 min-w-0 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <button
                     type="button"
                     onClick={() => { if (shopScanCode.trim()) handleShopQRScan(shopScanCode); }}
-                    className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
+                    className="shrink-0 px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer whitespace-nowrap"
                   >
                     Find
                   </button>
@@ -680,6 +808,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
           </form>
         </div>
         </div>
+        )
       ) : (
         <GuestShoppingPanel shops={shops} />
       )}

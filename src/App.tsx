@@ -5,6 +5,7 @@ import { getSupabase } from "./lib/supabaseClient";
 import { AuthUser, Customization } from "./types";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ShopRegistrationPage from "./pages/ShopRegistrationPage";
 import AdminDashboard from "./components/AdminDashboard";
 import ShopDashboard from "./components/ShopDashboard";
 import CustomerPortal from "./components/CustomerPortal";
@@ -91,7 +92,7 @@ function AppContent() {
         <Route path="/join" element={<SelfRegistrationPage />} />
         <Route path="/login" element={<LoginPage onLoginSuccess={handleLoginSuccess} />} />
         <Route path="/register" element={<RegisterPage onRegistered={() => navigate("/login")} />} />
-        <Route path="/register-shop" element={<RegisterPage onRegistered={() => navigate("/login")} />} />
+        <Route path="/register-shop" element={<ShopRegistrationPage onRegistered={() => navigate("/login")} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
