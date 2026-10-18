@@ -199,6 +199,10 @@ INSERT INTO admins (id, name, email, password, role, status, email_verified)
 VALUES ('admin-1', 'Super Administrator', 'artdeje@mail.com', 'admin123', 'super_admin', 'active', true)
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO admins (id, name, email, password, role, status, email_verified)
+VALUES ('admin-2', 'Manager Account', 'manager@mail.com', 'manager123', 'manager', 'active', true)
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO shops (id, shop_name, discount_percent, email, password, status, email_verified, qr_code)
 VALUES
     ('shop-1', 'Kigali Fashion House', 12, 'kigalifashion@shop.com', 'shop123', 'approved', true, 'SHOP-1001'),

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../lib/supabase";
+import { Customization } from "../types";
 import { Lock as LockIcon, Mail as MailIcon, Eye as EyeIcon, EyeOff as EyeOffIcon, KeyRound as KeyRoundIcon } from "../components/AdminIcons";
 import ThemeToggle from "../components/ThemeToggle";
 import { useSearchParams, useNavigate } from "react-router-dom";
@@ -7,6 +8,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "admin" | "shop") => void }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const [cust, setCust] = useState<Customization | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -27,6 +29,13 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState<string | null>(null);
   const [otpUserType, setOtpUserType] = useState<"admin" | "shop" | null>(null);
+
+  useEffect(() => {
+    db.getCustomization().then(setCust).catch(() => setCust(null));
+  }, []);
+
+  const siteName = cust?.title || "Mi Advantage";
+  const logoUrl = cust?.logo_url || "";
 
   // shopQr: shop QR code scanned at the terminal — after login, redirect to
   // /scan?shop=<shopQr> so the shop is auto-selected in the discount form.
@@ -266,11 +275,15 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
         </div>
         <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg p-8 space-y-6">
         <div className="text-center">
-          <div className="w-14 h-14 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-3">
-            <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
-          </div>
-          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Sign In</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Access your Mi Advantage dashboard</p>
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" className="h-10 w-auto object-contain mx-auto mb-3" />
+          ) : (
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+          )}
+          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{siteName}</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{cust?.login_subtext || "Access your dashboard"}</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4 text-left">
@@ -320,7 +333,6 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
           <p className="text-slate-500 dark:text-slate-400">Don't have an account?</p>
           <div className="flex flex-col sm:flex-row gap-2">
             <a href="#/register" className="flex-1 py-2 px-4 border border-purple-200 dark:border-purple-900 text-purple-700 dark:text-purple-300 rounded-xl font-semibold hover:bg-purple-50 dark:hover:bg-purple-900/40 transition-colors">Create Admin Account</a>
-            <a href="#/register-shop" className="flex-1 py-2 px-4 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl font-semibold hover:bg-emerald-50 dark:hover:bg-emerald-900/40 transition-colors">Register Your Shop</a>
           </div>
         </div>
 

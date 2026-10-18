@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "../lib/supabase";
+import { Customization } from "../types";
 import { Lock as LockIcon, Mail as MailIcon, Eye as EyeIcon, EyeOff as EyeOffIcon, UserPlus as UserPlusIcon } from "../components/AdminIcons";
 import ThemeToggle from "../components/ThemeToggle";
 
 export default function RegisterPage({ onRegistered }: { onRegistered: () => void }) {
+  const [cust, setCust] = useState<Customization | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,6 +17,13 @@ export default function RegisterPage({ onRegistered }: { onRegistered: () => voi
   const [showVerify, setShowVerify] = useState(false);
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  useEffect(() => {
+    db.getCustomization().then(setCust).catch(() => setCust(null));
+  }, []);
+
+  const siteName = cust?.title || "Mi Advantage";
+  const logoUrl = cust?.logo_url || "";
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +57,17 @@ export default function RegisterPage({ onRegistered }: { onRegistered: () => voi
         <ThemeToggle />
       </div>
       <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md p-8 space-y-6">
-        <div className="text-center"><div className="w-16 h-16 rounded-2xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center mx-auto mb-4"><UserPlusIcon className="w-8 h-8" /></div><h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Create Admin Account</h2><p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Register a new administrator account</p></div>
+        <div className="text-center">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" className="h-10 w-auto object-contain mx-auto mb-3" />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center mx-auto mb-4">
+              <UserPlusIcon className="w-8 h-8" />
+            </div>
+          )}
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{siteName}</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Register a new administrator account</p>
+        </div>
 
         {!showVerify ? (
           <form onSubmit={handleRegister} className="space-y-4 text-left">

@@ -3073,15 +3073,15 @@ export default function AdminDashboard({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Heading H1</label>
-                    <input type="text" required value={h1Input} onChange={(e) => setH1Input(e.target.value)} placeholder="e.g. Instant Merchant Discounts" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <input type="text" value={h1Input} onChange={(e) => setH1Input(e.target.value)} placeholder="e.g. Instant Merchant Discounts" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Subheading H2</label>
-                    <input type="text" required value={h2Input} onChange={(e) => setH2Input(e.target.value)} placeholder="e.g. QR Member Advantage System" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <input type="text" value={h2Input} onChange={(e) => setH2Input(e.target.value)} placeholder="e.g. QR Member Advantage System" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                   <div className="lg:col-span-2">
                     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Paragraph Description</label>
-                    <textarea required rows={2} value={pInput} onChange={(e) => setPInput(e.target.value)} placeholder="e.g. Scan your digital member card..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <textarea rows={2} value={pInput} onChange={(e) => setPInput(e.target.value)} placeholder="e.g. Scan your digital member card..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                 </div>
               </div>

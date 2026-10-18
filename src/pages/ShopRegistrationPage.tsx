@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   db,
   BUSINESS_TYPES,
@@ -6,6 +6,7 @@ import {
   DISCOUNT_SCOPES,
   DISCOUNT_SCOPE_LABELS,
 } from "../lib/supabase";
+import { Customization } from "../types";
 import {
   Lock as LockIcon,
   Mail as MailIcon,
@@ -24,6 +25,7 @@ import ThemeToggle from "../components/ThemeToggle";
  * as PENDING and only goes live after email verification and admin approval.
  */
 export default function ShopRegistrationPage({ onRegistered }: { onRegistered: () => void }) {
+  const [cust, setCust] = useState<Customization | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,6 +42,13 @@ export default function ShopRegistrationPage({ onRegistered }: { onRegistered: (
   const [step, setStep] = useState<"form" | "verify" | "done">("form");
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  useEffect(() => {
+    db.getCustomization().then(setCust).catch(() => setCust(null));
+  }, []);
+
+  const siteName = cust?.title || "Mi Advantage";
+  const logoUrl = cust?.logo_url || "";
 
   const readFile = (file: File, set: (v: string) => void) => {
     const reader = new FileReader();
@@ -126,12 +135,16 @@ export default function ShopRegistrationPage({ onRegistered }: { onRegistered: (
       </div>
       <div className="max-w-lg w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md p-6 sm:p-8 space-y-6">
         <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-4">
-            <StoreIcon className="w-8 h-8" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Register Your Shop</h2>
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" className="h-10 w-auto object-contain mx-auto mb-3" />
+          ) : (
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-4">
+              <StoreIcon className="w-8 h-8" />
+            </div>
+          )}
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{siteName}</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Join Mi Advantage as a partner outlet and start rewarding member cards.
+            Join {siteName} as a partner outlet and start rewarding member cards.
           </p>
         </div>
 

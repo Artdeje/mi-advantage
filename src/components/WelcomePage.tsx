@@ -7,7 +7,6 @@ import {
   Store,
   ShoppingBag,
   LogIn,
-  UserPlus,
   TrendingUp,
   BadgeCheck,
 } from "./AdminIcons";
@@ -24,19 +23,17 @@ export default function WelcomePage() {
   const title = cust?.title || "Mi Advantage QR Card Scan & Shop";
   const subtitle = cust?.subtitle || "Kigali Premium Privilege";
   const logoUrl = cust?.logo_url || "";
-  const h1 = cust?.home_h1 || "Instant Merchant Discounts";
-  const h2 = cust?.home_h2 || "QR Member Advantage System";
-  const p =
-    cust?.home_p ||
-    "Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges.";
-  const footerText = cust?.footer_text || "© 2026 Mi Advantage • Partner Merchant Terminals Kigali, Rwanda";
-  const footerSubtext = cust?.footer_subtext || "Encrypted Connection • Kigali, Rwanda";
-  const f1Title = cust?.feature1_title || "Partner Outlets";
-  const f1Desc = cust?.feature1_desc || "Approved merchants across Kigali offer exclusive member discounts.";
-  const f2Title = cust?.feature2_title || "Instant Savings";
-  const f2Desc = cust?.feature2_desc || "Discounts are computed in real-time at the checkout terminal.";
-  const f3Title = cust?.feature3_title || "Member Cards";
-  const f3Desc = cust?.feature3_desc || "Every member gets unique QR credentials.";
+  const h1 = cust?.home_h1 || "";
+  const h2 = cust?.home_h2 || "";
+  const p = cust?.home_p || "";
+  const footerText = cust?.footer_text || "";
+  const footerSubtext = cust?.footer_subtext || "";
+  const f1Title = cust?.feature1_title || "";
+  const f1Desc = cust?.feature1_desc || "";
+  const f2Title = cust?.feature2_title || "";
+  const f2Desc = cust?.feature2_desc || "";
+  const f3Title = cust?.feature3_title || "";
+  const f3Desc = cust?.feature3_desc || "";
 
   // Default embedded background: person scanning a member card (SVG data URI)
   // Used when admin selects image background but hasn't uploaded a custom image.
@@ -97,27 +94,11 @@ export default function WelcomePage() {
               <span className="sm:hidden">Scan</span>
             </a>
             <a
-              href="#/join"
-              className="px-4 py-2 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span className="hidden sm:inline">Get a Card</span>
-              <span className="sm:hidden">Join</span>
-            </a>
-            <a
               href="#/login"
               className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
             >
               <LogIn className="w-4 h-4" />
               <span className="hidden sm:inline">Sign In</span>
-            </a>
-            <a
-              href="#/register-shop"
-              className="px-4 py-2 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span className="hidden md:inline">Register Shop</span>
-              <span className="md:hidden">Shop</span>
             </a>
           </nav>
 
@@ -144,17 +125,9 @@ export default function WelcomePage() {
                 <Camera className="w-4 h-4" />
                 Card Scan
               </a>
-              <a href="#/join" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
-                <UserPlus className="w-4 h-4" />
-                Get a Card
-              </a>
               <a href="#/login" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
                 <LogIn className="w-4 h-4" />
                 Sign In
-              </a>
-              <a href="#/register-shop" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
-                <UserPlus className="w-4 h-4" />
-                Register Shop
               </a>
             </div>
           </nav>
