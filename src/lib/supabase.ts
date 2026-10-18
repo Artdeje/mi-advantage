@@ -223,14 +223,18 @@ export function getCustomerCardStatus(
 // Returns the exact message that blocks a card at a scan terminal, or null if
 // the card may be used. Guarantees the ONLY message shown for expired cards is
 // "Renew your subscription".
+//
+// A card is considered usable when:
+//   - card_status is NOT "suspended" (admin-imposed block), AND
+//   - valid_until has NOT been reached (not expired → "renew").
+//
+// subscription_status is informational only — an active, in-date membership
+// card works regardless of whether the subscription payment has been marked
+// "paid" in the system. This prevents valid active cards from showing
+// "Invalid card" at scan terminals.
 export function getCustomerCardBlockReason(c: CardStatusProbe): string | null {
-  // Self-registered online cards stay blocked until the subscription is paid,
-  // even inside their 14-day temporary window.
-  if (c.subscription_status === "unpaid")
-    return "Subscription payment required — complete payment to activate this card.";
-  const status = getCustomerCardStatus(c);
-  if (status === "suspended") return "Card suspended. Contact the administrator.";
-  if (status === "renew") return "Renew your subscription";
+  if (c.card_status === "suspended") return "Card suspended. Contact the administrator.";
+  if (isCustomerCardExpired(c)) return "Renew your subscription";
   return null;
 }
 

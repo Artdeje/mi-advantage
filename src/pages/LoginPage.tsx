@@ -1,9 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "../lib/supabase";
 import { Lock as LockIcon, Mail as MailIcon, Eye as EyeIcon, EyeOff as EyeOffIcon, KeyRound as KeyRoundIcon } from "../components/AdminIcons";
 import ThemeToggle from "../components/ThemeToggle";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
 export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "admin" | "shop") => void }) {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [emailInput, setEmailInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -24,6 +27,16 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpSuccess, setOtpSuccess] = useState<string | null>(null);
   const [otpUserType, setOtpUserType] = useState<"admin" | "shop" | null>(null);
+
+  // shopQr: shop QR code scanned at the terminal — after login, redirect to
+  // /scan?shop=<shopQr> so the shop is auto-selected in the discount form.
+  const shopQrParam = searchParams.get("shopQr") || "";
+  // shop: shop email pre-filled from a scanned shop QR.
+  const shopEmailParam = searchParams.get("shop") || "";
+
+  useEffect(() => {
+    if (shopEmailParam) setEmailInput(shopEmailParam);
+  }, [shopEmailParam]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +64,13 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
       if (result.error) {
         setLoginError(result.error);
       } else if (result.user) {
-        onLoginSuccess(result.user.role as "admin" | "shop");
+        // If we arrived here from a shop QR scan, redirect to the scanner
+        // with the shop pre-selected instead of the dashboard.
+        if (shopQrParam && result.user.role === "shop") {
+          navigate(`/#/scan?shop=${encodeURIComponent(shopQrParam)}`);
+        } else {
+          onLoginSuccess(result.user.role as "admin" | "shop");
+        }
       }
     } catch {
       setLoginError("Auth connection error. Please try again.");
@@ -75,7 +94,11 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
           try {
             const loginResult = await db.login(emailInput, passwordInput);
             if (loginResult.user) {
-              onLoginSuccess(loginResult.user.role as "admin" | "shop");
+              if (shopQrParam && loginResult.user.role === "shop") {
+                navigate(`/#/scan?shop=${encodeURIComponent(shopQrParam)}`);
+              } else {
+                onLoginSuccess(loginResult.user.role as "admin" | "shop");
+              }
             } else if (loginResult.error) {
               setOtpError(loginResult.error);
               setShowOtpVerify(false);

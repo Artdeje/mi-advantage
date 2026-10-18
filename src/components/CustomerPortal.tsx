@@ -238,6 +238,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   };
 
   // Handle a decoded SHOP-#### code: autoselect the shop in the discount form.
+  // If no shop session exists, redirect to login with the shop email pre-filled
+  // and the shop QR stored so the scanner auto-selects it after login.
   const handleShopQRScan = async (code: string) => {
     if (scanLockRef.current) return;
     scanLockRef.current = true;
@@ -246,6 +248,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       if (!cleanCode) return;
       const shop = await db.getShopByQRCode(cleanCode);
       if (shop) {
+        if (!isShopSession) {
+          // Not logged in as a shop — send to login with email + QR pre-filled.
+          window.location.hash = `/login?shop=${encodeURIComponent(shop.email)}&shopQr=${encodeURIComponent(shop.qr_code)}`;
+          return;
+        }
         setSelectedShopId(shop.id);
         setShopAutoSelected(true);
         setShopScanMsg(null);
@@ -350,8 +357,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       return;
     }
 
-    if (!selectedShopId) {
-      alert('Please select an active Partner Shop.');
+    if (!shopAutoSelected || !activeShop) {
+      alert('Please scan the shop QR code first to select this outlet.');
       return;
     }
     if (!amountBefore || amountBefore <= 0) {
@@ -675,7 +682,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                   {activeShop.profile_picture ? (
                     <img src={activeShop.profile_picture} alt={activeShop.shop_name} className="w-10 h-10 rounded-xl object-cover" />
                   ) : (
-                    <span className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black">
+                    <span className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0">
                       {activeShop.shop_name.charAt(0).toUpperCase()}
                     </span>
                   )}
@@ -692,19 +699,15 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                   </button>
                 </div>
               ) : (
-                <select
-                  required
-                  value={selectedShopId}
-                  onChange={(e) => { setSelectedShopId(e.target.value); setShopAutoSelected(false); }}
-                  className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="" disabled>Select partner outlet...</option>
-                  {shops.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.shop_name} ({s.discount_percent}% Disc)
-                    </option>
-                  ))}
-                </select>
+                <div className="bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-xl p-3 flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black shrink-0">
+                    🏪
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">No shop selected</p>
+                    <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">Scan the shop QR above to select this outlet.</p>
+                  </div>
+                </div>
               )}
 
               {/* Shop QR quick scan */}
