@@ -253,48 +253,45 @@ export default function AdminDashboard({
       setCurrentAdminRole((authUser?.admin_role as 'super_admin' | 'admin' | 'manager') || 'admin');
 
       // Seed form customizations
-      setTitleInput(currentCust.title);
-      setSubtitleInput(currentCust.subtitle || "Kigali Premium Privilege");
-      setThemeInput(currentCust.theme_color);
-      setLogoInput(currentCust.logo_url);
+      setTitleInput(currentCust.title || "");
+      setSubtitleInput(currentCust.subtitle || "");
+      setThemeInput(currentCust.theme_color || "green");
+      setLogoInput(currentCust.logo_url || "");
       setFaviconInput(currentCust.favicon_url || "");
-      setH1Input(currentCust.home_h1 || "Instant Merchant Discounts");
-      setH2Input(currentCust.home_h2 || "QR Member Advantage System");
-      setPInput(
-        currentCust.home_p ||
-          "Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly.",
-      );
-      setLoginHeading(currentCust.login_heading || 'Partner Shop Terminal');
-      setLoginSubtext(currentCust.login_subtext || 'Authorized Merchants Only');
-      setSignupHeading(currentCust.signup_heading || 'Register Your Shop');
-      setSignupSubtext(currentCust.signup_subtext || 'Submit your business documents for admin approval.');
+      setH1Input(currentCust.home_h1 || "");
+      setH2Input(currentCust.home_h2 || "");
+      setPInput(currentCust.home_p || "");
+      setLoginHeading(currentCust.login_heading || "");
+      setLoginSubtext(currentCust.login_subtext || "");
+      setSignupHeading(currentCust.signup_heading || "");
+      setSignupSubtext(currentCust.signup_subtext || "");
 
       // Seed footer values
-      setFooterText(currentCust.footer_text || '© 2026 Mi Advantage • Partner Merchant Terminals Kigali, Rwanda');
-      setFooterSubtext(currentCust.footer_subtext || 'Encrypted Connection • Kigali, Rwanda');
+      setFooterText(currentCust.footer_text || "");
+      setFooterSubtext(currentCust.footer_subtext || "");
 
       // Seed feature strip values
-      setF1Title(currentCust.feature1_title || 'Partner Outlets');
-      setF1Desc(currentCust.feature1_desc || 'Approved merchants across Kigali offer exclusive member discounts.');
-      setF2Title(currentCust.feature2_title || 'Instant Savings');
-      setF2Desc(currentCust.feature2_desc || 'Discounts are computed in real-time at the checkout terminal.');
-      setF3Title(currentCust.feature3_title || 'Member Cards');
-      setF3Desc(currentCust.feature3_desc || 'Every member gets unique QR credentials.');
+      setF1Title(currentCust.feature1_title || "");
+      setF1Desc(currentCust.feature1_desc || "");
+      setF2Title(currentCust.feature2_title || "");
+      setF2Desc(currentCust.feature2_desc || "");
+      setF3Title(currentCust.feature3_title || "");
+      setF3Desc(currentCust.feature3_desc || "");
 
       // Seed landing page background
-      setHomeBgType(currentCust.home_background_type || 'none');
-      setHomeBgValue(currentCust.home_background_value || '');
+      setHomeBgType(currentCust.home_background_type || "none");
+      setHomeBgValue(currentCust.home_background_value || "");
 
       // Seed full branding values
-      setPrimaryColor(currentCust.primary_color || '#059669');
-      setSecondaryColor(currentCust.secondary_color || '#0d9488');
-      setAccentColor(currentCust.accent_color || '#f59e0b');
-      setBgColor(currentCust.background_color || '#f8fafc');
-      setFontFamily(currentCust.font_family || 'Inter');
-      setHeadingFont(currentCust.heading_font || 'Space Grotesk');
-      setLoginBgType(currentCust.login_background_type || 'gradient');
-      setLoginBgValue(currentCust.login_background_value || 'linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)');
-      setCustomCss(currentCust.custom_css || '');
+      setPrimaryColor(currentCust.primary_color || "#059669");
+      setSecondaryColor(currentCust.secondary_color || "#0d9488");
+      setAccentColor(currentCust.accent_color || "#f59e0b");
+      setBgColor(currentCust.background_color || "#f8fafc");
+      setFontFamily(currentCust.font_family || "Inter");
+      setHeadingFont(currentCust.heading_font || "Space Grotesk");
+      setLoginBgType(currentCust.login_background_type || "gradient");
+      setLoginBgValue(currentCust.login_background_value || "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)");
+      setCustomCss(currentCust.custom_css || "");
 
     } catch (err) {
       console.error("AdminDashboard loadData failed:", err);

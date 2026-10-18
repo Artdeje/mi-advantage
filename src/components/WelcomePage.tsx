@@ -20,8 +20,8 @@ export default function WelcomePage() {
     db.getCustomization().then(setCust).catch(() => setCust(null));
   }, []);
 
-  const title = cust?.title || "Mi Advantage QR Card Scan & Shop";
-  const subtitle = cust?.subtitle || "Kigali Premium Privilege";
+  const title = cust?.title || "";
+  const subtitle = cust?.subtitle || "";
   const logoUrl = cust?.logo_url || "";
   const h1 = cust?.home_h1 || "";
   const h2 = cust?.home_h2 || "";
