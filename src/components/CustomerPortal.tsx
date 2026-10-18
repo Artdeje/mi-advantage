@@ -682,7 +682,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                   {activeShop.profile_picture ? (
                     <img src={activeShop.profile_picture} alt={activeShop.shop_name} className="w-10 h-10 rounded-xl object-cover" />
                   ) : (
-                    <span className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0">
+                    <span className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black">
                       {activeShop.shop_name.charAt(0).toUpperCase()}
                     </span>
                   )}
