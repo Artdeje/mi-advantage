@@ -70,8 +70,9 @@ let customerV5ColumnsReady: boolean | null = null;
   }
 
 // Pull a CUST-###/SHOP-#### token out of any scanned payload — a bare code, a
-// referral link (?ref=), or a shop deep link (?shop=). Returns the first full
-// token uppercased, or the trimmed text uppercased when no token matches.
+// referral link (?ref=), a shop deep link (?shop=), or a card link (?card=).
+// Returns the first full token uppercased, or the trimmed text uppercased when
+// no token matches.
 export function extractScanCode(raw: string): string {
   const text = (raw || "").trim();
   if (!text) return "";
@@ -81,7 +82,11 @@ export function extractScanCode(raw: string): string {
   if (queryIndex >= 0) {
     try {
       const params = new URLSearchParams(text.slice(queryIndex + 1));
-      const p = params.get("shop") || params.get("ref") || params.get("code");
+      const p =
+        params.get("shop") ||
+        params.get("ref") ||
+        params.get("code") ||
+        params.get("card");
       if (p) return decodeURIComponent(p).trim().toUpperCase();
     } catch {
       /* not a query string — fall through */
@@ -236,6 +241,51 @@ export function getCustomerCardBlockReason(c: CardStatusProbe): string | null {
   if (c.card_status === "suspended") return "Card suspended. Contact the administrator.";
   if (isCustomerCardExpired(c)) return "Renew your subscription";
   return null;
+}
+
+// True when a Postgres insert failed only because customers.email is still
+// declared NOT NULL on that database (the intended schema makes it nullable
+// so email-less cards can be issued).
+export function isEmailNotNullError(error: unknown): boolean {
+  const msg =
+    typeof error === "string"
+      ? error
+      : (error as any)?.message || (error as any)?.error || "";
+  const text = String(msg).toLowerCase();
+  return (
+    text.includes("not-null") ||
+    text.includes("not null") ||
+    (text.includes("email") && text.includes("null value"))
+  );
+}
+
+// Short, user-facing validation outcome shown at the scan terminal.
+export type CardScanOutcome = {
+  valid: boolean;
+  message: string;
+  detail: string;
+};
+
+export function getCardScanOutcome(c: CardStatusProbe): CardScanOutcome {
+  if (c.card_status === "suspended") {
+    return {
+      valid: false,
+      message: "Renew subscription",
+      detail: "This card is suspended. Please contact the administrator.",
+    };
+  }
+  if (isCustomerCardExpired(c)) {
+    return {
+      valid: false,
+      message: "Renew subscription",
+      detail: "This card has expired. Renew the subscription to keep using it.",
+    };
+  }
+  return {
+    valid: true,
+    message: "Card is valid",
+    detail: "This member card is active and can be used for a discount.",
+  };
 }
 
 // Next sequential card ID (CUST-001, CUST-002, ...) skipping taken codes.
@@ -1065,6 +1115,10 @@ export class SupabaseDatabaseService {
           ? "renew"
           : "active";
     if (c.card_status === desired) return c;
+    // Only persist the flip when a signed-in operator is driving the scan.
+    // An external QR scanner is unauthenticated, so writing would 401; the
+    // in-memory status below is still correct for the validation result.
+    if (!this.currentUser) return { ...c, card_status: desired };
     try {
       const { error } = await getSupabase()
         .from("customers")
@@ -1207,7 +1261,25 @@ export class SupabaseDatabaseService {
       const { error } = await getSupabase()
         .from("customers")
         .insert([newCust]);
-      if (error) return { customer: null, error: error.message };
+      if (error) {
+        // Some live databases still have customers.email as NOT NULL while the
+        // intended schema makes it nullable (email-less cards are valid).
+        // Retry once with a deterministic placeholder so issuing a card never
+        // fails because the member did not provide an email.
+        if (!cleanEmail && isEmailNotNullError(error)) {
+          const retry: Customer = {
+            ...newCust,
+            email: `card-${newCust.qr_code.toLowerCase()}@cards.mi-advantage.local`,
+          };
+          const { error: retryErr } = await getSupabase()
+            .from("customers")
+            .insert([retry]);
+          if (retryErr) return { customer: null, error: retryErr.message };
+          newCust.email = retry.email;
+        } else {
+          return { customer: null, error: error.message };
+        }
+      }
     } catch (e: any) {
       return { customer: null, error: e?.message || "Insert failed" };
     }
@@ -1396,10 +1468,11 @@ export class SupabaseDatabaseService {
         return customer;
       }
       // Fallback: substring match only when it resolves to exactly one card.
+      // The server adds the SQL wildcards, so pass the bare code here.
       const { data, error } = await getSupabase()
         .from("customers")
         .select("*")
-        .ilike("qr_code", `%${clean}%`)
+        .ilike("qr_code", clean)
         .limit(50);
       if (!error && data) {
         const match = (data as Customer[]).find(

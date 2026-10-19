@@ -595,56 +595,100 @@ export default function AdminDashboard({
     await loadData();
   };
 
-  // Update Global Configurations Theme / Logo
-  const handleSaveCustomization = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Update Global Configurations Theme / Logo - individual field saves
+  const saveBrandingField = async (updates: Partial<Customization>, label: string) => {
     setBrandingMsg("");
     try {
-      const updated = await db.updateCustomization({
-        title: titleInput,
-        subtitle: subtitleInput,
-        theme_color: themeInput,
-        logo_url: logoInput,
-        favicon_url: faviconInput.trim(),
-        home_h1: h1Input,
-        home_h2: h2Input,
-        home_p: pInput,
-        feature1_title: f1Title,
-        feature1_desc: f1Desc,
-        feature2_title: f2Title,
-        feature2_desc: f2Desc,
-        feature3_title: f3Title,
-        feature3_desc: f3Desc,
-        home_background_type: homeBgType,
-        home_background_value: homeBgValue,
-        login_heading: loginHeading,
-        login_subtext: loginSubtext,
-        signup_heading: signupHeading,
-        signup_subtext: signupSubtext,
-        footer_text: footerText,
-        footer_subtext: footerSubtext,
-        primary_color: primaryColor,
-        secondary_color: secondaryColor,
-        accent_color: accentColor,
-        background_color: bgColor,
-        font_family: fontFamily,
-        heading_font: headingFont,
-        login_background_type: loginBgType,
-        login_background_value: loginBgValue,
-        custom_css: customCss,
-      });
+      const updated = await db.updateCustomization(updates);
       const fresh = await db.getCustomization();
-      if (fresh.title === updated.title && fresh.theme_color === updated.theme_color && fresh.home_h1 === updated.home_h1) {
-        setBrandingMsg("Branding saved successfully. Changes are live across the portal.");
-        if (onCustomizationChange) onCustomizationChange();
-      } else {
-        setBrandingMsg("Saved locally but the server may not have persisted. Check your connection.");
-        if (onCustomizationChange) onCustomizationChange();
-      }
-      setTimeout(() => setBrandingMsg(""), 6000);
+      setBrandingMsg(`${label} saved successfully.`);
+      if (onCustomizationChange) onCustomizationChange();
+      setTimeout(() => setBrandingMsg(""), 4000);
     } catch {
-      setBrandingMsg("Failed to update branding. Please check your database connection.");
+      setBrandingMsg(`Failed to update ${label}. Please check your database connection.`);
     }
+  };
+
+  const saveBrandingBasics = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ title: titleInput, subtitle: subtitleInput }, "Branding basics");
+  };
+
+  const saveBrandingTheme = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ theme_color: themeInput }, "Theme accent");
+  };
+
+  const saveBrandingLogo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ logo_url: logoInput }, "Logo");
+  };
+
+  const saveBrandingFavicon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ favicon_url: faviconInput.trim() }, "Favicon");
+  };
+
+  const saveBrandingHomepage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ home_h1: h1Input, home_h2: h2Input, home_p: pInput }, "Homepage content");
+  };
+
+  const saveBrandingFeatures = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({
+      feature1_title: f1Title,
+      feature1_desc: f1Desc,
+      feature2_title: f2Title,
+      feature2_desc: f2Desc,
+      feature3_title: f3Title,
+      feature3_desc: f3Desc,
+    }, "Feature strip");
+  };
+
+  const saveBrandingBg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ home_background_type: homeBgType, home_background_value: homeBgValue }, "Background");
+  };
+
+  const saveBrandingLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ login_heading: loginHeading, login_subtext: loginSubtext }, "Login form");
+  };
+
+  const saveBrandingSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ signup_heading: signupHeading, signup_subtext: signupSubtext }, "Signup form");
+  };
+
+  const saveBrandingFooter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ footer_text: footerText, footer_subtext: footerSubtext }, "Footer");
+  };
+
+  const saveBrandingColors = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({
+      primary_color: primaryColor,
+      secondary_color: secondaryColor,
+      accent_color: accentColor,
+      background_color: bgColor,
+    }, "Brand colors");
+  };
+
+  const saveBrandingTypography = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ font_family: fontFamily, heading_font: headingFont }, "Typography");
+  };
+
+  const saveBrandingLoginBg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ login_background_type: loginBgType, login_background_value: loginBgValue }, "Login background");
+  };
+
+  const saveBrandingCustomCss = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ custom_css: customCss }, "Custom CSS");
   };
 
   const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2238,6 +2282,24 @@ export default function AdminDashboard({
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">
+                    Email Address{" "}
+                    <span className="text-slate-400 normal-case">(Optional)</span>
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="member@example.com"
+                    value={custEmail}
+                    onChange={(e) => setCustEmail(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-semibold"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Cards without an email are still valid &mdash; the phone number
+                    identifies the member.
+                  </p>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">
@@ -2425,11 +2487,11 @@ export default function AdminDashboard({
                        <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">{selectedCustomers.size} selected</span>
                        <button onClick={handleBulkActivate} className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-bold cursor-pointer">Activate</button>
                        <button onClick={handleBulkDeactivate} className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900 rounded-lg text-[10px] font-bold cursor-pointer">Deactivate</button>
-                       <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 rounded-lg text-[10px] font-bold cursor-pointer">Delete</button>
-                     </>
-                   )}
-                 </div>
-               )}
+<button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 rounded-lg text-[10px] font-bold cursor-pointer">Delete</button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                   <table className="w-full text-xs border-collapse">
@@ -2987,12 +3049,20 @@ export default function AdminDashboard({
               )}
             </div>
 
-            <form onSubmit={handleSaveCustomization} className="space-y-6">
-              {/* ROW 1: Title + Theme + Logo */}
+            {/* ROW 1: Title + Theme + Logo */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1">
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Platform Title</label>
-                  <input type="text" required value={titleInput} onChange={(e) => setTitleInput(e.target.value)} placeholder="e.g. Mi Advantage" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  <div className="flex flex-col gap-2">
+                    <input type="text" value={titleInput} onChange={(e) => setTitleInput(e.target.value)} placeholder="e.g. Mi Advantage" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <button
+                      type="button"
+                      onClick={saveBrandingBasics}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Title
+                    </button>
+                  </div>
                   <p className="text-[10px] text-slate-400 mt-1">Shown across the portal, dashboards, and member cards.</p>
                 </div>
                 <div className="lg:col-span-1">
@@ -3002,20 +3072,30 @@ export default function AdminDashboard({
                 </div>
                 <div className="lg:col-span-1">
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Theme Accent</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: "green", label: "Green", bg: "bg-green-600" },
-                      { id: "emerald", label: "Emerald", bg: "bg-emerald-500" },
-                      { id: "teal", label: "Teal", bg: "bg-teal-600" },
-                      { id: "dark-green", label: "Dark", bg: "bg-emerald-950" },
-                    ].map((theme) => (
-                      <button key={theme.id} type="button" onClick={() => setThemeInput(theme.id as any)}
-                        className={`p-2 rounded-lg border text-left flex items-center gap-2 text-xs cursor-pointer transition-all ${themeInput === theme.id ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 font-bold" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
-                        <span className={`w-4 h-4 rounded-full ${theme.bg}`} />
-                        <span>{theme.label}</span>
-                      </button>
-                    ))}
+                  <div className="flex flex-col gap-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: "green", label: "Green", bg: "bg-green-600" },
+                        { id: "emerald", label: "Emerald", bg: "bg-emerald-500" },
+                        { id: "teal", label: "Teal", bg: "bg-teal-600" },
+                        { id: "dark-green", label: "Dark", bg: "bg-emerald-950" },
+                      ].map((theme) => (
+                        <button key={theme.id} type="button" onClick={() => setThemeInput(theme.id as any)}
+                          className={`p-2 rounded-lg border text-left flex items-center gap-2 text-xs cursor-pointer transition-all ${themeInput === theme.id ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 font-bold" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
+                          <span className={`w-4 h-4 rounded-full ${theme.bg}`} />
+                          <span>{theme.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={saveBrandingTheme}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Theme
+                    </button>
                   </div>
+                  <p className="text-[10px] text-slate-400 mt-1">Applied across buttons, links, and accents.</p>
                 </div>
                 <div className="lg:col-span-1">
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Company Logo</label>
@@ -3028,6 +3108,13 @@ export default function AdminDashboard({
                         <>
                           <input type="file" accept="image/*" onChange={handleLogoFileChange} className="hidden" id="admin-logo-upload" />
                           <label htmlFor="admin-logo-upload" className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block">Upload Logo</label>
+                          <button
+                            type="button"
+                            onClick={saveBrandingLogo}
+                            className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                          >
+                            Save Logo
+                          </button>
                           <p className="text-[10px] text-slate-400 mt-1">PNG with transparency recommended</p>
                         </>
                       ) : (
@@ -3054,6 +3141,13 @@ export default function AdminDashboard({
                             placeholder="…or paste image URL"
                             className="mt-2 w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           />
+                          <button
+                            type="button"
+                            onClick={saveBrandingFavicon}
+                            className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                          >
+                            Save Favicon
+                          </button>
                           <p className="text-[10px] text-slate-400 mt-1">Square PNG/ICO — shown in the browser tab</p>
                         </>
                       ) : (
@@ -3079,6 +3173,15 @@ export default function AdminDashboard({
                   <div className="lg:col-span-2">
                     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Paragraph Description</label>
                     <textarea rows={2} value={pInput} onChange={(e) => setPInput(e.target.value)} placeholder="e.g. Scan your digital member card..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <button
+                      type="button"
+                      onClick={saveBrandingHomepage}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Homepage Content
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3117,6 +3220,15 @@ export default function AdminDashboard({
                       <input type="text" value={f3Desc} onChange={(e) => setF3Desc(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     </div>
                   </div>
+                  <div className="lg:col-span-3">
+                    <button
+                      type="button"
+                      onClick={saveBrandingFeatures}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Feature Strip
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -3141,6 +3253,13 @@ export default function AdminDashboard({
                       placeholder={homeBgType === "image" ? "https://example.com/person-scanning-card.jpg" : "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)"}
                       className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm"
                     />
+                    <button
+                      type="button"
+                      onClick={saveBrandingBg}
+                      className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Background
+                    </button>
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">Tip: Use an image of a person scanning a member card for the hero background.</p>
@@ -3159,6 +3278,13 @@ export default function AdminDashboard({
                       <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Login Subtext</label>
                       <input type="text" value={loginSubtext} onChange={(e) => setLoginSubtext(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     </div>
+                    <button
+                      type="button"
+                      onClick={saveBrandingLogin}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Login Form
+                    </button>
                   </div>
                   <div className="space-y-3">
                     <div>
@@ -3169,6 +3295,13 @@ export default function AdminDashboard({
                       <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Signup Subtext</label>
                       <input type="text" value={signupSubtext} onChange={(e) => setSignupSubtext(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     </div>
+                    <button
+                      type="button"
+                      onClick={saveBrandingSignup}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Signup Form
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3184,6 +3317,15 @@ export default function AdminDashboard({
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Footer Subtext</label>
                     <input type="text" value={footerSubtext} onChange={(e) => setFooterSubtext(e.target.value)} placeholder="Encrypted Connection • Kigali, Rwanda" className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <button
+                      type="button"
+                      onClick={saveBrandingFooter}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Footer
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3212,6 +3354,13 @@ export default function AdminDashboard({
                         </div>
                       ))}
                     </div>
+                    <button
+                      type="button"
+                      onClick={saveBrandingColors}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors mt-2"
+                    >
+                      Save Brand Colors
+                    </button>
                   </div>
 
                   {/* Typography */}
@@ -3237,6 +3386,15 @@ export default function AdminDashboard({
                         <option value="Raleway">Raleway</option>
                       </select>
                     </div>
+                    <div className="lg:col-span-2">
+                      <button
+                        type="button"
+                        onClick={saveBrandingTypography}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        Save Typography
+                      </button>
+                    </div>
                   </div>
 
                   {/* Login Background */}
@@ -3257,28 +3415,39 @@ export default function AdminDashboard({
                         <input type="text" value={loginBgValue} onChange={(e) => setLoginBgValue(e.target.value)} placeholder={loginBgType === "gradient" ? "linear-gradient(...)" : "#ffffff"} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-mono" />
                       )}
                     </div>
+                    <div className="lg:col-span-2">
+                      <button
+                        type="button"
+                        onClick={saveBrandingLoginBg}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        Save Login Background
+                      </button>
+                    </div>
                   </div>
 
                   {/* Custom CSS */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Custom CSS</label>
                     <textarea value={customCss} onChange={(e) => setCustomCss(e.target.value)} rows={4} placeholder=".my-class { color: red; }" className="w-full px-4 py-2 bg-slate-900 text-slate-200 rounded-lg text-xs font-mono" />
+                    <button
+                      type="button"
+                      onClick={saveBrandingCustomCss}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors mt-2"
+                    >
+                      Save Custom CSS
+                    </button>
                   </div>
                 </div>
               )}
-
-              <button type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-all shadow-sm cursor-pointer">
-                Save All Branding Changes
-              </button>
 
               {brandingMsg && (
                 <div className={`p-4 rounded-xl text-center font-semibold text-sm border ${brandingMsg.includes("Failed") ? "bg-red-50 dark:bg-red-950/50 border-red-100 dark:border-red-900 text-red-700 dark:text-red-300" : "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-100 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300"}`}>
                   {brandingMsg}
                 </div>
               )}
-            </form>
-          </div>
-        )}
+            </div>
+          )}
 
         {activeTab === "admins" && currentAdminRole === "super_admin" && (
           <div

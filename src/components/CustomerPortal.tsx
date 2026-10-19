@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   db,
   getCustomerCardBlockReason,
+  getCardScanOutcome,
   extractScanCode,
   buildShopUrl,
   BUSINESS_TYPE_LABELS,
@@ -16,19 +17,15 @@ import {
   CheckCircle2,
   AlertTriangle,
   User,
-  ShoppingCart,
   Store,
 } from './AdminIcons';
-import GuestShoppingPanel from './GuestShoppingPanel';
 import ThemeToggle from './ThemeToggle';
 import { Html5Qrcode } from 'html5-qrcode';
-import { motion, AnimatePresence } from 'motion/react';
 
 export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }) {
   // Database states
   const [shops, setShops] = useState<Shop[]>([]);
   const [selectedShopId, setSelectedShopId] = useState('');
-  const [portalMode, setPortalMode] = useState<'member' | 'guest'>('member');
   // A logged-in shop gets the full transaction terminal; everyone else (an
   // external phone camera / guest) gets the partner directory after a scan.
   const isShopSession = db.currentUser?.role === 'shop';
@@ -36,12 +33,16 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const [showPartners, setShowPartners] = useState(false);
   // Deep link ?shop=SHOP-1001 (from a scanned counter QR) pre-selects the shop.
   const [pendingShopCode, setPendingShopCode] = useState('');
+  // Deep link ?card=CUST-0001 (from an external QR scanner) authenticates the card.
+  const [pendingCardCode, setPendingCardCode] = useState('');
   
   // Scanned customer state
   const [scannedCustomer, setScannedCustomer] = useState<Customer | null>(null);
   const [scanDone, setScanDone] = useState(false);
   const [amountBefore, setAmountBefore] = useState<number | ''>('');
   const [scanErrorState, setScanErrorState] = useState<string | null>(null);
+  // Card validation outcome shown to the user: "Card is valid" / "Renew subscription"
+  const [cardOutcome, setCardOutcome] = useState<{ valid: boolean; message: string; detail: string } | null>(null);
 
   // Scanned shop state — a shop QR fills the discount form automatically,
   // so the operator never has to choose the shop from the dropdown.
@@ -93,24 +94,27 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     loadDatabaseData();
   }, []);
 
-  // Deep link: read ?shop=… once from the hash, then resolve it against the
-  // loaded shop list so a scanned counter QR opens with that shop filled in.
+  // Deep link: read ?shop=… / ?card=… once from the hash.
+  //  - ?shop=SHOP-1001  → pre-selects that counter (shop QR posted at a partner)
+  //  - ?card=CUST-0001  → an external QR scanner link authenticates the card
   useEffect(() => {
-    const readShopCode = () => {
+    const readDeepLink = () => {
       const h = window.location.hash || '';
       const qi = h.indexOf('?');
       if (qi < 0) return;
       try {
         const params = new URLSearchParams(h.slice(qi + 1));
-        const code = params.get('shop') || params.get('ref');
-        if (code) setPendingShopCode(extractScanCode(code));
+        const card = params.get('card');
+        if (card) setPendingCardCode(extractScanCode(card));
+        const shop = params.get('shop');
+        if (shop) setPendingShopCode(extractScanCode(shop));
       } catch {
         /* ignore malformed query */
       }
     };
-    readShopCode();
-    window.addEventListener('hashchange', readShopCode);
-    return () => window.removeEventListener('hashchange', readShopCode);
+    readDeepLink();
+    window.addEventListener('hashchange', readDeepLink);
+    return () => window.removeEventListener('hashchange', readDeepLink);
   }, []);
 
   useEffect(() => {
@@ -120,10 +124,53 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     if (match) {
       setSelectedShopId(match.id);
       setShopAutoSelected(true);
-      setPortalMode('member');
       setPendingShopCode('');
     }
   }, [pendingShopCode, shops]);
+
+  // External QR-scanner deep link (?card=CUST-0001): authenticate the card
+  // and route to the partner directory (or fill the shop terminal form).
+  useEffect(() => {
+    if (!pendingCardCode) return;
+    let cancelled = false;
+    (async () => {
+      const customer = await db.getCustomerByQRCode(pendingCardCode);
+      if (cancelled) return;
+      setPendingCardCode('');
+      if (!customer) {
+        setCardOutcome({
+          valid: false,
+          message: 'Card not found',
+          detail: `No member card matches "${pendingCardCode}".`,
+        });
+        return;
+      }
+      const outcome = getCardScanOutcome(customer);
+      setCardOutcome(outcome);
+      if (!outcome.valid) {
+        setScannedCustomer(null);
+        setScanDone(false);
+        return;
+      }
+      setScanErrorState(null);
+      setScannedCustomer(customer);
+      setScanDone(true);
+      if (isShopSession) {
+        scrollToDiscountForm();
+      } else {
+        setShowPartners(true);
+        setTimeout(() => {
+          document
+            .getElementById('member-partners-panel')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 150);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCardCode]);
 
   // Switch between cameras
   const toggleFacingMode = async () => {
@@ -290,14 +337,13 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       const customer = await db.getCustomerByQRCode(cleanCode);
 
       if (customer) {
-        // Card validity is disabled the moment the expiration date/time is reached.
-        // The ONLY message shown is the block reason ("Renew your subscription").
-        const blockReason = getCustomerCardBlockReason(customer);
-        if (blockReason) {
-          setScanErrorState(blockReason);
+        // Card validity: "Card is valid" or "Renew subscription".
+        const outcome = getCardScanOutcome(customer);
+        setCardOutcome(outcome);
+        if (!outcome.valid) {
+          setScanErrorState(outcome.detail);
           setScannedCustomer(null);
           setScanDone(false);
-          alert(blockReason);
           return;
         }
 
@@ -319,6 +365,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         }
       } else {
         setScanErrorState(null);
+        setCardOutcome({
+          valid: false,
+          message: 'Card not found',
+          detail: `No member card matches "${cleanCode}". Please scan a valid registered card.`,
+        });
         alert(`Invalid Card scanned: "${cleanCode}". Please scan a valid registered customer card.`);
       }
     } finally {
@@ -424,36 +475,48 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         </div>
       </div>
 
-      {/* Mode toggle: member card vs guest shopping */}
-      <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5">
-        <button
-          type="button"
-          onClick={() => setPortalMode('member')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
-            portalMode === 'member'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+      {/* Card validation outcome: "Card is valid" / "Renew subscription" */}
+      {cardOutcome && (
+        <div
+          id="card-validation-banner"
+          role="status"
+          className={`flex items-start gap-3 rounded-2xl border p-4 ${
+            cardOutcome.valid
+              ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800'
+              : 'bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800'
           }`}
         >
-          <QrCode className="w-4 h-4" />
-          <span>Member Card</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setPortalMode('guest')}
-          className={`py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
-            portalMode === 'guest'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-          }`}
-        >
-          <ShoppingCart className="w-4 h-4" />
-          <span>Guest Shopping</span>
-        </button>
-      </div>
+          <span
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              cardOutcome.valid
+                ? 'bg-emerald-600 text-white'
+                : 'bg-amber-500 text-white'
+            }`}
+          >
+            {cardOutcome.valid ? (
+              <CheckCircle2 className="w-5 h-5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5" />
+            )}
+          </span>
+          <div className="min-w-0">
+            <p
+              className={`text-sm font-black uppercase tracking-wider ${
+                cardOutcome.valid
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : 'text-amber-700 dark:text-amber-300'
+              }`}
+            >
+              {cardOutcome.message}
+            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+              {cardOutcome.detail}
+            </p>
+          </div>
+        </div>
+      )}
 
-      {portalMode === 'member' ? (
-        showPartners && scannedCustomer ? (
+      {showPartners && scannedCustomer ? (
           <div id="member-partners-panel" className="space-y-6 scroll-mt-6">
             {/* Verified member banner */}
             <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
@@ -820,10 +883,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
           </form>
         </div>
         </div>
-        )
-      ) : (
-        <GuestShoppingPanel shops={shops} />
-      )}
+        )}
 
       </div>
       </div>

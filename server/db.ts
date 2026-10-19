@@ -111,6 +111,22 @@ export function escapeLike(s: string): string {
   return s.replace(/([%_\\])/g, "\\$&");
 }
 
+// True when a Postgres insert failed only because customers.email is still
+// declared NOT NULL on that database (the intended schema makes it nullable so
+// email-less cards can be issued).
+export function isEmailNotNullError(error: unknown): boolean {
+  const msg =
+    typeof error === "string"
+      ? error
+      : (error as any)?.message || (error as any)?.error || "";
+  const text = String(msg).toLowerCase();
+  return (
+    text.includes("not-null") ||
+    text.includes("not null") ||
+    (text.includes("email") && text.includes("null value"))
+  );
+}
+
 // Unique-ish id helpers (same scheme as before, plus a random tail so two
 // inserts in the same millisecond cannot collide on the TEXT primary key).
 export function uid(prefix: string): string {

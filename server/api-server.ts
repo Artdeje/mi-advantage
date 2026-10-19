@@ -12,6 +12,7 @@ import {
   escapeLike,
   uid,
   isServiceRole,
+  isEmailNotNullError,
 } from "./db";
 
 const app = express();
@@ -133,7 +134,9 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   // Allow unauthenticated GET to shops (public partner list for CustomerPortal)
   if (req.method === "GET" && req.path === "/api/db/shops" && !req.query.single) { next(); return; }
   // Allow unauthenticated customer QR lookup
-  if (req.method === "GET" && req.path === "/api/db/customers" && req.query.qr_code_ilike) { next(); return; }
+  // Allow unauthenticated customer card lookup (scan terminals / external QR
+  // scanners). Both the exact code and the substring form are permitted.
+  if (req.method === "GET" && req.path === "/api/db/customers" && (req.query.qr_code || req.query.qr_code_ilike)) { next(); return; }
   // Allow unauthenticated POST to customers (for CustomerPortal QR scan logging)
   if (req.method === "POST" && req.path === "/api/db/customers") { next(); return; }
   // Allow unauthenticated POST to sales (for CustomerPortal transaction creation)
@@ -459,12 +462,21 @@ app.post("/api/db/auth/register-customer", async (req, res) => {
     const id = uid("cust");
     const onlineUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     // supabase-schema.sql guarantees subscription_status — no migration probe needed.
-    const { error: custErr } = await getDb().from("customers").insert({
+    const customerRow: Record<string, any> = {
       id, name: cleanName, phone: cleanPhone, qr_code: code, valid_until: onlineUntil,
       customer_type: type, student_id: type === "student" ? cleanStudentId : "",
       university: type === "student" ? cleanUniversity : "", referee_number: refCode,
       card_status: "suspended", credit_status: "pending", subscription_status: "unpaid",
-    });
+    };
+    let { error: custErr } = await getDb().from("customers").insert(customerRow);
+    if (custErr && isEmailNotNullError(custErr)) {
+      // Some live databases still declare customers.email NOT NULL while the
+      // intended schema makes it nullable. Retry once with a deterministic
+      // placeholder so self-registration never fails for email-less cards.
+      customerRow.email = `card-${code.toLowerCase()}@cards.mi-advantage.local`;
+      const retry = await getDb().from("customers").insert(customerRow);
+      custErr = retry.error;
+    }
     if (custErr) throw custErr;
     try {
       await getDb().from("audit_logs").insert({
@@ -678,7 +690,12 @@ app.get("/api/db/:table", async (req, res) => {
       if (key.endsWith("_ilike")) {
         const col = key.replace(/_ilike$/, "");
         if (!isSafeIdentifier(col)) { res.status(400).json({ error: `Invalid column: ${col}` }); return; }
-        q = q.ilike(col, `%${escapeLike(v)}%`);
+        // The client may send a ready-made pattern (e.g. "%CUST-01%"). Only
+        // wrap with wildcards when the caller did not supply its own, otherwise
+        // "%%CUST-01%%" would be parsed by SQL LIKE as a literal percent sign
+        // and the card would never be found.
+        const pattern = v.includes("%") ? v : `%${escapeLike(v)}%`;
+        q = q.ilike(col, pattern);
       } else if (key === "used") {
         // Postgres stores real booleans (old MySQL layer mapped TINYINT 1/0).
         q = q.eq("used", v === "true");
@@ -776,7 +793,21 @@ app.post("/api/db/:table", async (req, res) => {
       for (const k of keys) o[k] = row[k] ?? null;
       return o;
     });
-    const { error } = await getDb().from(table).insert(clean);
+    let { error } = await getDb().from(table).insert(clean);
+    if (error && table === "customers" && isEmailNotNullError(error)) {
+      // customers.email is nullable in the intended schema, but some live
+      // databases still declare it NOT NULL. Issuing a card for a member with
+      // no email must never fail, so retry once with a deterministic
+      // placeholder derived from the card ID.
+      const patched = clean.map((row: any) => ({
+        ...row,
+        email:
+          row.email ||
+          `card-${String(row.qr_code || row.id || "unknown").toLowerCase()}@cards.mi-advantage.local`,
+      }));
+      const retry = await getDb().from(table).insert(patched);
+      error = retry.error;
+    }
     if (error) throw error;
     res.json({ inserted: rows.length });
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
