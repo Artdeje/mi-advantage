@@ -4,6 +4,7 @@ import {
   db,
   getCustomerCardStatus,
   buildShopUrl,
+  buildCardUrl,
   BUSINESS_TYPES,
   BUSINESS_TYPE_LABELS,
   DISCOUNT_SCOPES,
@@ -301,6 +302,17 @@ export default function AdminDashboard({
   useEffect(() => {
     loadData().catch((err) => console.error("AdminDashboard useEffect error:", err));
   }, [activeTab]);
+
+  // Keep the active tab in sync with the URL so deep links (e.g. #/customers,
+  // #/partners, #/admins) open the right panel instead of always landing on
+  // Analytics.
+  useEffect(() => {
+    const syncTabFromHash = () => setActiveTab(getInitialTab());
+    syncTabFromHash();
+    window.addEventListener("hashchange", syncTabFromHash);
+    return () => window.removeEventListener("hashchange", syncTabFromHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Handle Create / Update Shop
   const handleSaveShop = async (e: React.FormEvent) => {
@@ -2526,9 +2538,9 @@ export default function AdminDashboard({
                            <td className="p-3"><input type="checkbox" checked={selectedCustomers.has(c.id)} onChange={() => handleSelectCustomer(c.id)} className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-emerald-600 dark:text-emerald-400 focus:ring-emerald-500" /></td>
                          )}
                          <td className="p-3">
-                           <div className="bg-white dark:bg-slate-900 p-0.5 border border-slate-200 dark:border-slate-800 rounded inline-block">
-                             <img src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${c.qr_code}&margin=1`} alt="qr" className="w-8 h-8" referrerPolicy="no-referrer" />
-                           </div>
+                            <div className="bg-white dark:bg-slate-900 p-0.5 border border-slate-200 dark:border-slate-800 rounded inline-block">
+                              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${encodeURIComponent(buildCardUrl(c.qr_code))}&margin=1`} alt="qr" className="w-8 h-8" referrerPolicy="no-referrer" />
+                            </div>
                            <span className="ml-2 text-emerald-600 dark:text-emerald-400 font-bold text-[10px]">{c.qr_code}</span>
                          </td>
                           <td className="p-3 font-bold text-slate-800 dark:text-slate-100">{c.name}</td>
@@ -3688,7 +3700,7 @@ export default function AdminDashboard({
                     {/* QR Code Graphic */}
                     <div className="bg-white dark:bg-slate-900 p-1 rounded-xl shadow-lg shrink-0 border border-emerald-500/20">
                       <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${selectedCardCustomer.qr_code}&margin=1`}
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(buildCardUrl(selectedCardCustomer.qr_code))}&margin=1`}
                         alt="QR Code"
                         className="w-16 h-16"
                         referrerPolicy="no-referrer"
@@ -3760,7 +3772,7 @@ export default function AdminDashboard({
                       
                       <!-- QR Code wrapper -->
                       <rect x="280" y="80" width="80" height="80" rx="8" fill="#ffffff" />
-                      <ImageIcon href="https://api.qrserver.com/v1/create-qr-code/?size=100x100&amp;data=${selectedCardCustomer.qr_code}&amp;margin=1" x="284" y="84" height="72" width="72" />
+                      <ImageIcon href="https://api.qrserver.com/v1/create-qr-code/?size=100x100&amp;data=${encodeURIComponent(buildCardUrl(selectedCardCustomer.qr_code))}&amp;margin=1" x="284" y="84" height="72" width="72" />
                       
                       <!-- Separator line -->
                       <line x1="20" y1="185" x2="360" y2="185" stroke="#064e3b" stroke-width="1" stroke-opacity="0.4" />
@@ -3869,7 +3881,7 @@ export default function AdminDashboard({
                                   <div class="holder-contact">${selectedCardCustomer.phone}</div>
                                 </div>
                                 <div class="qr-box">
-                                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${selectedCardCustomer.qr_code}&margin=1" />
+                                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(buildCardUrl(selectedCardCustomer.qr_code))}&margin=1" />
                                 </div>
                               </div>
                               <div class="footer">

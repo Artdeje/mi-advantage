@@ -102,6 +102,16 @@ export function buildShopUrl(code: string): string {
   return code ? `${base}?shop=${encodeURIComponent(code)}` : base;
 }
 
+// Deep link encoded into a MEMBER CARD QR.
+//  - Scanned by our system terminal  -> the CUST-### token is extracted and
+//    autofills the discount form.
+//  - Scanned by an external phone camera -> the link opens the scan page, which
+//    authenticates the card and shows the partner directory.
+export function buildCardUrl(code: string): string {
+  const base = `${window.location.origin}${window.location.pathname}#/scan`;
+  return code ? `${base}?card=${encodeURIComponent(code)}` : base;
+}
+
 // Shop business category + which catalog the discount covers. Used by the shop
 // registration form, the admin Add-Shop modal, and the scan terminals.
 export const BUSINESS_TYPES = ["retail", "restaurant", "cafe", "hotel", "services", "other"] as const;

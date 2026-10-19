@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { db } from '../lib/supabase';
+import { db, buildCardUrl } from '../lib/supabase';
 import { Shop, Customer } from '../types';
 import { QRCodeCanvas } from 'qrcode.react';
 import { jsPDF } from 'jspdf';
@@ -252,6 +252,18 @@ export default function SelfRegistrationPage() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Your Card ID</p>
                 <p className="font-mono font-black text-2xl tracking-widest">{customer.qr_code}</p>
               </div>
+
+              {/* Scannable member QR — system scanner reads the Card ID,
+                  external phone camera opens the link and shows partners. */}
+              <div className="mx-auto w-fit space-y-2">
+                <div className="bg-white p-3 rounded-2xl border-2 border-emerald-500/30 shadow-sm">
+                  <QRCodeCanvas id="selfreg-card-qr-canvas" value={buildCardUrl(customer.qr_code)} size={168} level="M" includeMargin />
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 max-w-xs">
+                  Scan this code at the partner counter &mdash; the cashier reads
+                  your Card ID, or your phone opens the partner list.
+                </p>
+              </div>
               <div>
                 <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider ${isPaid ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'}`}>
                   {isPaid ? (<><BadgeCheck className="w-4 h-4" /> Active • valid until {customer.valid_until ? new Date(customer.valid_until).toLocaleDateString() : ''}</>) : (<><Clock className="w-4 h-4" /> Awaiting subscription payment</>)}
@@ -269,10 +281,6 @@ export default function SelfRegistrationPage() {
                     <p className={`text-[11px] font-bold ${s.done ? 'text-emerald-800 dark:text-emerald-200' : 'text-slate-500 dark:text-slate-400'}`}>{s.label}</p>
                   </div>
                 ))}
-              </div>
-              {/* Hidden canvas feeding the PDF QR image */}
-              <div className="hidden">
-                <QRCodeCanvas id="selfreg-card-qr-canvas" value={customer.qr_code} size={120} level="M" includeMargin />
               </div>
               <button
                 onClick={handleDownloadOnlineCard}
