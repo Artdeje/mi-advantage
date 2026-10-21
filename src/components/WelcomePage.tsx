@@ -4,13 +4,12 @@ import { db } from "../lib/supabase";
 import { Customization } from "../types";
 import {
   Camera,
-  Store,
-  ShoppingBag,
   LogIn,
-  TrendingUp,
   BadgeCheck,
 } from "./AdminIcons";
 import ThemeToggle from "./ThemeToggle";
+import { deriveCardBrand } from "./MemberCard";
+import LandingBackground from "./LandingBackground";
 
 export default function WelcomePage() {
   const [cust, setCust] = useState<Customization | null>(null);
@@ -28,50 +27,77 @@ export default function WelcomePage() {
   const p = cust?.home_p || "";
   const footerText = cust?.footer_text || "";
   const footerSubtext = cust?.footer_subtext || "";
-  const f1Title = cust?.feature1_title || "";
-  const f1Desc = cust?.feature1_desc || "";
-  const f2Title = cust?.feature2_title || "";
-  const f2Desc = cust?.feature2_desc || "";
-  const f3Title = cust?.feature3_title || "";
-  const f3Desc = cust?.feature3_desc || "";
 
-  // Default embedded background: person scanning a member card (SVG data URI)
-  // Used when admin selects image background but hasn't uploaded a custom image.
-  const DEFAULT_BG_SVG = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080' viewBox='0 0 1920 1080'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:%23059669;stop-opacity:1'/><stop offset='100%' style='stop-color:%230d9488;stop-opacity:1'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)'/><circle cx='960' cy='420' r='110' fill='%23ffffff' opacity='0.12'/><path d='M850 420 L960 300 L1070 420 Z' fill='%23ffffff' opacity='0.18'/><rect x='700' y='500' width='520' height='120' rx='24' fill='%23ffffff' opacity='0.15'/><text x='960' y='545' font-family='Arial, sans-serif' font-size='52' fill='%23ffffff' text-anchor='middle' font-weight='bold'>Mi Advantage</text><text x='960' y='600' font-family='Arial, sans-serif' font-size='20' fill='%23ffffff' opacity='0.85' text-anchor='middle'>Member Card Scanning Terminal</text></svg>";
-
-  // Apply landing page background (image / gradient / none) via inline style
+  // Landing page background (image / gradient / none).
+  //   "image"  → the uploaded artwork, or the built-in card-themed artwork
+  //   "gradient" → the CSS gradient string
+  //   "none"   → the default artwork is still shown so the page never
+  //               renders as a blank screen
   const bgType = cust?.home_background_type || "image";
   const bgValue = cust?.home_background_value || "";
-  const effectiveBgValue = bgType === "image" && !bgValue ? DEFAULT_BG_SVG : bgValue;
+  const useUploadedImage = bgType === "image" && !!bgValue;
+  const useDefaultArtwork = bgType === "image" ? !bgValue : bgType === "none";
+  const useGradient = bgType === "gradient" && !!bgValue;
+
+  const pageBackground = React.useMemo(() => {
+    if (useUploadedImage) {
+      return {
+        backgroundImage: `url("${bgValue}")`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        backgroundAttachment: "fixed" as const,
+      };
+    }
+    if (useGradient) {
+      return { backgroundImage: bgValue, backgroundSize: "cover", backgroundPosition: "center" };
+    }
+    return {};
+  }, [useUploadedImage, useGradient, bgValue]);
+
+  const showArtwork = useDefaultArtwork || useUploadedImage;
 
   useEffect(() => {
     const root = document.documentElement;
-    if (bgType === "image" && effectiveBgValue) {
-      root.style.backgroundImage = `url("${effectiveBgValue}")`;
-      root.style.backgroundSize = "cover";
-      root.style.backgroundPosition = "center";
-      root.style.backgroundRepeat = "no-repeat";
-      // Remove default gradient classes' effect by overriding
-      root.style.backgroundColor = "";
-    } else if (bgType === "gradient" && bgValue) {
-      root.style.backgroundImage = bgValue;
-      root.style.backgroundSize = "cover";
-    } else {
+    return () => {
       root.style.backgroundImage = "";
-    }
-  }, [bgType, effectiveBgValue, bgValue]);
+      root.style.backgroundSize = "";
+      root.style.backgroundPosition = "";
+      root.style.backgroundRepeat = "";
+    };
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 dark:from-slate-950 via-emerald-50/40 dark:via-emerald-950/20 to-teal-50/40 dark:to-teal-950/20 flex flex-col">
+    <div
+      className="min-h-screen flex flex-col relative"
+      style={pageBackground}
+    >
+      {/* Built-in card-themed artwork — nothing is layered on top of it */}
+      {useDefaultArtwork && <LandingBackground />}
+
+      {/* Uploaded artwork is applied via the wrapper's background-image */}
+
+      {/* Scrim — keeps the hero copy readable without hiding the artwork */}
+      {showArtwork && (
+        <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-slate-950/70 via-slate-950/40 to-slate-950/70" />
+      )}
+
       {/* NAV BAR */}
-      <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40">
+      <header className="relative z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 sticky top-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
           <a href="#/" className="flex items-center gap-2.5 min-w-0 shrink-0" onClick={() => setMenuOpen(false)}>
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="h-8 w-auto object-contain" />
             ) : (
-              <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0">
-                MA
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0"
+                style={{
+                  background: "linear-gradient(135deg, #fff2cf 0%, #e8b13a 40%, #b07c1c 70%, #ffd98a 100%)",
+                  color: "#1b1206",
+                  fontStyle: "italic",
+                }}
+              >
+                {deriveCardBrand(cust?.title, cust?.card_brand)}
               </div>
             )}
             <div className="min-w-0">
@@ -134,48 +160,37 @@ export default function WelcomePage() {
         )}
       </header>
 
-      {/* HERO */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14 w-full">
-        <div className="max-w-2xl mx-auto text-center space-y-5">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100/70 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 rounded-full text-[10px] font-black uppercase tracking-widest">
+      {/* HERO — the background artwork stays fully visible, nothing is layered on top of it */}
+      <main className="relative z-10 flex-1 flex items-center w-full px-4 sm:px-6 py-16 sm:py-24">
+        <div className="max-w-xl mx-auto lg:mx-0 lg:ml-[7%] text-center lg:text-left space-y-5">
+          <span
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ring-1 backdrop-blur"
+            style={{
+              background: "rgba(0,200,240,0.14)",
+              color: "#9defff",
+              boxShadow: "0 0 0 1px rgba(0,200,240,0.3)",
+            }}
+          >
             <BadgeCheck className="w-3.5 h-3.5" />
             Official Member Card Terminal
           </span>
-          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-slate-100 leading-tight">
+          <h1 className="text-3xl sm:text-4xl font-black text-white leading-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">
             {h1}
-            <span className="block text-emerald-600 dark:text-emerald-400 mt-1">{h2}</span>
+            <span
+              className="block mt-1"
+              style={{ color: "#00c8f0", textShadow: "0 0 26px rgba(0,200,240,0.45)" }}
+            >
+              {h2}
+            </span>
           </h1>
-          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-lg mx-auto">{p}</p>
-        </div>
-
-        {/* FEATURE STRIP */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-10">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400"><Store className="w-5 h-5" /></div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">{f1Title}</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{f1Desc}</p>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400"><TrendingUp className="w-5 h-5" /></div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">{f2Title}</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{f2Desc}</p>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400"><ShoppingBag className="w-5 h-5" /></div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">{f3Title}</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{f3Desc}</p>
-            </div>
-          </div>
+          <p className="text-sm sm:text-base text-slate-200/90 leading-relaxed max-w-lg mx-auto drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)]">
+            {p}
+          </p>
         </div>
       </main>
 
       {/* FOOTER */}
-      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur">
+      <footer className="relative z-20 border-t border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="text-xs text-slate-500 dark:text-slate-400 text-center sm:text-left">{footerText}</p>
           <div className="flex items-center gap-3">

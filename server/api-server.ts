@@ -22,6 +22,9 @@ app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  // Live data must never be served from the browser cache — a revalidated
+  // 304 used to wipe the admin lists.
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   if (_req.method === "OPTIONS") { res.sendStatus(200); return; }
   next();
 });

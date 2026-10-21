@@ -1,3 +1,4 @@
+import { BrandMonogram, deriveCardBrand } from './MemberCard';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   db,
@@ -26,6 +27,13 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   // Database states
   const [shops, setShops] = useState<Shop[]>([]);
   const [selectedShopId, setSelectedShopId] = useState('');
+  // Card branding (system logo follows the same monogram as the printed card)
+  const [cardBrand, setCardBrand] = useState('MA');
+  useEffect(() => {
+    db.getCustomization()
+      .then((c) => setCardBrand(deriveCardBrand(c?.title, c?.card_brand)))
+      .catch(() => setCardBrand('MA'));
+  }, []);
   // A logged-in shop gets the full transaction terminal; everyone else (an
   // external phone camera / guest) gets the partner directory after a scan.
   const isShopSession = db.currentUser?.role === 'shop';
@@ -451,7 +459,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         {/* Top nav */}
         <div className="flex items-center justify-between gap-3">
           <a href="#/" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
-            <span className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs">MA</span>
+            <BrandMonogram brand={cardBrand} className="w-8 h-8 rounded-lg text-xs" />
             <span>Home</span>
           </a>
           <div className="flex items-center gap-2">

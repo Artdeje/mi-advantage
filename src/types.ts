@@ -80,6 +80,10 @@ export interface AuditLog {
 export interface Customization {
   theme_color: 'green' | 'teal' | 'emerald' | 'dark-green' | 'blue';
   logo_url: string;
+  // Member card branding
+  card_brand?: string; // short monogram printed on the card (e.g. "BP")
+  card_logo_url?: string; // logo artwork printed on the card face
+  card_wordmark?: string; // wordmark at the top of the card (e.g. "THE BEYOND")
   title: string;
   subtitle?: string;
   favicon_url?: string;

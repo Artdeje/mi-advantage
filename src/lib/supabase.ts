@@ -446,6 +446,9 @@ export const SEED_CUSTOMERS: Customer[] = [
 const SEED_CUSTOMIZATION: Customization = {
   theme_color: "green",
   logo_url: "",
+  card_brand: "BP",
+  card_logo_url: "",
+  card_wordmark: "THE BEYOND",
   title: "Mi Advantage QR Card Scan & Shop",
   subtitle: "Kigali Premium Privilege",
   favicon_url: "",

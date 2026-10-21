@@ -1,9 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { db, buildCardUrl } from '../lib/supabase';
-import { Shop, Customer } from '../types';
+import { Shop, Customer, Customization } from '../types';
 import { QRCodeCanvas } from 'qrcode.react';
 import { jsPDF } from 'jspdf';
+import {
+  MemberCard,
+  BrandMonogram,
+  deriveCardBrand,
+  deriveCardNumber,
+  formatCardExpiry,
+  type CardFace,
+} from './MemberCard';
 import {
   Store,
   QrCode,
@@ -53,6 +61,19 @@ export default function SelfRegistrationPage() {
   const [payMsg, setPayMsg] = useState('');
   const [paying, setPaying] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Card branding + which face of the card is on screen
+  const [customization, setCustomization] = useState<Customization | null>(null);
+  const [cardFace, setCardFace] = useState<CardFace>('front');
+
+  const cardBrand = deriveCardBrand(customization?.title, customization?.card_brand);
+  const cardWordmark = (customization?.card_wordmark || 'THE BEYOND').trim();
+  const cardLogoUrl = customization?.card_logo_url || '';
+  const systemLogoUrl = customization?.logo_url || '';
+
+  useEffect(() => {
+    db.getCustomization().then(setCustomization).catch(() => setCustomization(null));
+  }, []);
 
   const carouselRef = useRef<HTMLDivElement | null>(null);
 
@@ -144,50 +165,102 @@ export default function SelfRegistrationPage() {
     }
   };
 
-  // 14-day ONLINE (temporary) access card as PDF.
+  // Member card as PDF — page 1 is the front face, page 2 the back face
+  // (the back carries the QR code, exactly like the printed card).
   const handleDownloadOnlineCard = () => {
     if (!customer) return;
+    const brand = deriveCardBrand(customization?.title, customization?.card_brand);
+    const wordmark = (customization?.card_wordmark || 'THE BEYOND').trim();
+    const number = deriveCardNumber(customer.qr_code);
+    const expiry = formatCardExpiry(customer.valid_until);
+
     const doc = new jsPDF({ unit: 'mm', format: [86, 54] }); // CR80 card ratio
-    // Header band
-    doc.setFillColor(6, 78, 59);
-    doc.rect(0, 0, 86, 18, 'F');
+    const W = 86;
+    const H = 54;
+
+    /* ---------------------------- FRONT FACE ---------------------------- */
+    doc.setFillColor(8, 13, 24);
+    doc.rect(0, 0, W, H, 'F');
+    // cyan glow edge
+    doc.setDrawColor(0, 200, 240);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(1, 1, W - 2, H - 2, 3, 3, 'S');
+
+    // wordmark
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('MI ADVANTAGE', 5, 7);
-    doc.setFontSize(6.5);
-    doc.setFont('helvetica', 'normal');
-    doc.text('ONLINE TEMPORARY CARD  •  14-DAY ACCESS', 5, 12);
-    // Body
-    doc.setTextColor(15, 23, 42);
+    doc.text(wordmark.toUpperCase(), 6, 11);
+    // gold rule
+    doc.setDrawColor(232, 177, 58);
+    doc.setLineWidth(0.4);
+    doc.line(6, 13, 34, 13);
+
+    // THE <BRAND> / DISCOUNT CARD
+    doc.setTextColor(0, 200, 240);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    const holder = customer.name.toUpperCase().slice(0, 26);
-    doc.text(holder, 5, 25);
-    doc.setFont('courier', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(6, 78, 59);
-    doc.text(customer.qr_code, 5, 32);
+    doc.setFontSize(15);
+    doc.text(`THE ${brand}`, 6, 24);
+    doc.text('DISCOUNT CARD', 6, 31);
+
+    // gold monogram + caption
+    doc.setTextColor(232, 177, 58);
+    doc.setFontSize(20);
+    doc.text(brand, 6, 46);
+    doc.setFontSize(7);
+    doc.text('DISCOUNT CARD', 22, 46);
+
+    /* ----------------------------- BACK FACE ----------------------------- */
+    doc.addPage([W, H], 'landscape');
+    doc.setFillColor(8, 13, 24);
+    doc.rect(0, 0, W, H, 'F');
+    doc.setDrawColor(0, 200, 240);
+    doc.setLineWidth(0.6);
+    doc.roundedRect(1, 1, W - 2, H - 2, 3, 3, 'S');
+
+    doc.setTextColor(0, 200, 240);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('SCAN', 6, 18);
+    doc.setTextColor(255, 255, 255);
+    doc.text('TO SAVE', 6, 26);
+
+    doc.setDrawColor(232, 177, 58);
+    doc.setLineWidth(0.4);
+    doc.line(6, 29, 32, 29);
+
+    doc.setTextColor(235, 240, 248);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Phone: ${customer.phone}`, 5, 37);
-    const from = new Date(customer.created_at).toLocaleDateString();
-    const to = customer.valid_until
-      ? new Date(customer.valid_until).toLocaleDateString()
-      : '';
-    doc.text(`Online access: ${from}  -  ${to}`, 5, 41);
-    doc.setFontSize(5.5);
-    doc.text('Activate with subscription payment for the 1-year physical card.', 5, 45);
-    doc.text('Present this CARD ID at any partner shop counter.', 5, 48.5);
+    doc.text('Scan the QR code to check', 6, 35);
+    doc.text('where the card can be used', 6, 38.5);
+
     // QR image from the rendered canvas
     try {
       const canvas = document.getElementById('selfreg-card-qr-canvas') as HTMLCanvasElement | null;
       if (canvas) {
-        doc.addImage(canvas.toDataURL('image/png'), 'PNG', 62, 21, 19, 19);
+        doc.addImage(canvas.toDataURL('image/png'), 'PNG', 55, 8, 24, 24);
       }
-    } catch { /* QR is decorative; card stays valid without it */ }
-    doc.save(`MA-Online-Card-${customer.qr_code}.pdf`);
+    } catch { /* QR is decorative; the card stays valid without it */ }
+
+    // card number + expiry
+    doc.setDrawColor(232, 177, 58);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(30, 42, 18, 7, 1, 1, 'S');
+    doc.roundedRect(50, 42, 30, 7, 1, 1, 'S');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(0, 200, 240);
+    doc.text(brand, 32, 47);
+    doc.setTextColor(255, 255, 255);
+    doc.text(number, 38, 47);
+    doc.setTextColor(232, 177, 58);
+    doc.setFontSize(7.5);
+    doc.text('EXPIRES', 52, 47);
+    doc.setTextColor(255, 255, 255);
+    doc.text(expiry, 64, 47);
+
+    doc.save(`MA-Card-${customer.qr_code}.pdf`);
   };
 
   const handleDownloadReferralQR = () => {
@@ -219,7 +292,7 @@ export default function SelfRegistrationPage() {
         {/* Top nav */}
         <div className="flex items-center justify-between gap-3">
           <a href="#/" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
-            <span className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs">MA</span>
+            <BrandMonogram brand={cardBrand} className="w-8 h-8 rounded-lg text-xs" />
             <span>Home</span>
           </a>
           <div className="flex items-center gap-2">
@@ -253,14 +326,45 @@ export default function SelfRegistrationPage() {
                 <p className="font-mono font-black text-2xl tracking-widest">{customer.qr_code}</p>
               </div>
 
-              {/* Scannable member QR — system scanner reads the Card ID,
-                  external phone camera opens the link and shows partners. */}
-              <div className="mx-auto w-fit space-y-2">
-                <div className="bg-white p-3 rounded-2xl border-2 border-emerald-500/30 shadow-sm">
-                  <QRCodeCanvas id="selfreg-card-qr-canvas" value={buildCardUrl(customer.qr_code)} size={168} level="M" includeMargin />
+              {/* The member card — same artwork as the admin portal.
+                  Front face carries the brand, back face carries the QR. */}
+              <div className="mx-auto w-fit space-y-3">
+                <div className="flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 w-fit mx-auto">
+                  {(['front', 'back'] as CardFace[]).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setCardFace(f)}
+                      className={
+                        'px-5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer ' +
+                        (cardFace === f
+                          ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100')
+                      }
+                    >
+                      {f === 'front' ? 'Front' : 'Back / QR'}
+                    </button>
+                  ))}
                 </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 max-w-xs">
-                  Scan this code at the partner counter &mdash; the cashier reads
+
+                <div className="w-[min(380px,88vw)]">
+                  <MemberCard
+                    customer={customer}
+                    face={cardFace}
+                    brand={cardBrand}
+                    wordmark={cardWordmark}
+                    cardLogoUrl={cardLogoUrl}
+                    systemLogoUrl={systemLogoUrl}
+                  />
+                </div>
+
+                {/* Rendered QR canvas — used for the PDF download */}
+                <div className="hidden">
+                  <QRCodeCanvas id="selfreg-card-qr-canvas" value={buildCardUrl(customer.qr_code)} size={420} level="M" includeMargin />
+                </div>
+
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                  Scan the code on the back at the partner counter &mdash; the cashier reads
                   your Card ID, or your phone opens the partner list.
                 </p>
               </div>
@@ -287,7 +391,7 @@ export default function SelfRegistrationPage() {
                 className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
-                <span>Download 14-day online card (PDF)</span>
+                <span>Download member card (PDF)</span>
               </button>
             </div>
 

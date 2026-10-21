@@ -377,8 +377,27 @@ class QueryBuilder {
     const qs = params.toString();
     const url = `${this.baseUrl}/api/db/${this.table}${qs ? "?" + qs : ""}`;
 
-    const res = await fetch(url, { headers: this.getAuthHeaders() });
+    const res = await fetch(url, { headers: this.getAuthHeaders(), cache: "no-store" });
     if (!res.ok) {
+      // A 304 (Not Modified) is not an error — the browser cache revalidated
+      // the request. Re-fetch it with the cache bypassed so the caller still
+      // gets the rows instead of an empty list.
+      if (res.status === 304) {
+        try {
+          const retry = await fetch(url, {
+            headers: { ...this.getAuthHeaders(), "Cache-Control": "no-cache" },
+            cache: "reload",
+          });
+          if (retry.ok) {
+            const retryData = await retry.json();
+            return this.singleMode
+              ? { data: retryData || null, error: null }
+              : { data: retryData, error: null };
+          }
+        } catch {
+          /* fall through to the generic error below */
+        }
+      }
       const err = await res.json().catch(() => ({ error: res.statusText }));
       return { data: null, error: { message: err.error || "Query failed" } };
     }

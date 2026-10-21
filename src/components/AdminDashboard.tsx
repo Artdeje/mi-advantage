@@ -75,6 +75,17 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { QRCodeCanvas } from "qrcode.react";
 import ThemeToggle from "./ThemeToggle";
+import {
+  MemberCard,
+  deriveCardBrand,
+  deriveCardNumber,
+  formatCardExpiry,
+  cardQrImageUrl,
+  buildCardFrontSvg,
+  buildCardBackSvg,
+  BrandMonogram,
+  type CardFace,
+} from "./MemberCard";
 
 // Constants for charts
 const COLORS = [
@@ -185,6 +196,10 @@ export default function AdminDashboard({
   >("green");
   const [logoInput, setLogoInput] = useState("");
   const [faviconInput, setFaviconInput] = useState("");
+  // Member card branding fields
+  const [cardBrandInput, setCardBrandInput] = useState("");
+  const [cardWordmarkInput, setCardWordmarkInput] = useState("");
+  const [cardLogoInput, setCardLogoInput] = useState("");
   const [h1Input, setH1Input] = useState("");
   const [h2Input, setH2Input] = useState("");
   const [pInput, setPInput] = useState("");
@@ -221,6 +236,15 @@ export default function AdminDashboard({
   // Selected customer for card download preview modal
   const [selectedCardCustomer, setSelectedCardCustomer] =
     useState<Customer | null>(null);
+
+  // Which side of the member card is shown in the preview modal
+  const [cardFace, setCardFace] = useState<CardFace>("front");
+
+  // Card branding (shared by both faces of the card)
+  const cardBrand = deriveCardBrand(customization?.title, customization?.card_brand);
+  const cardWordmark = (customization?.card_wordmark || "THE BEYOND").trim();
+  const cardLogoUrl = customization?.card_logo_url || "";
+  const systemLogoUrl = customization?.logo_url || "";
 
   // Filtering & Sorting for Sales Reports
   const [filterShopId, setFilterShopId] = useState("");
@@ -259,6 +283,9 @@ export default function AdminDashboard({
       setThemeInput(currentCust.theme_color || "green");
       setLogoInput(currentCust.logo_url || "");
       setFaviconInput(currentCust.favicon_url || "");
+      setCardBrandInput(currentCust.card_brand || "");
+      setCardWordmarkInput(currentCust.card_wordmark || "");
+      setCardLogoInput(currentCust.card_logo_url || "");
       setH1Input(currentCust.home_h1 || "");
       setH2Input(currentCust.home_h2 || "");
       setPInput(currentCust.home_p || "");
@@ -641,6 +668,18 @@ export default function AdminDashboard({
     await saveBrandingField({ favicon_url: faviconInput.trim() }, "Favicon");
   };
 
+  const saveBrandingCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField(
+      {
+        card_brand: cardBrandInput.trim().toUpperCase(),
+        card_wordmark: cardWordmarkInput.trim(),
+        card_logo_url: cardLogoInput,
+      },
+      "Member card branding",
+    );
+  };
+
   const saveBrandingHomepage = async (e: React.FormEvent) => {
     e.preventDefault();
     await saveBrandingField({ home_h1: h1Input, home_h2: h2Input, home_p: pInput }, "Homepage content");
@@ -718,6 +757,16 @@ export default function AdminDashboard({
       const reader = new FileReader();
       reader.onload = (event) => {
         setFaviconInput(event.target?.result as string);
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const handleCardLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setCardLogoInput(event.target?.result as string);
       };
       reader.readAsDataURL(e.target.files[0]);
     }
@@ -1606,7 +1655,7 @@ export default function AdminDashboard({
         {customization?.logo_url ? (
           <img src={customization.logo_url} alt="Company Logo" className="h-8 w-auto object-contain" />
         ) : (
-          <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">MA</div>
+          <BrandMonogram brand={cardBrand} className="w-8 h-8 rounded-lg text-xs" />
         )}
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{customization?.title || "Mi Advantage"}</h1>
@@ -1621,7 +1670,7 @@ export default function AdminDashboard({
           <div className="absolute inset-0 bg-slate-900/50" onClick={() => setMobileNavOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-72 max-w-[85vw] bg-white dark:bg-slate-900 shadow-2xl flex flex-col">
             <div className="flex items-center gap-3 p-4 border-b border-slate-100 dark:border-slate-800">
-              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">MA</div>
+              <BrandMonogram brand={cardBrand} className="w-10 h-10 rounded-xl text-sm" />
               <div className="flex-1 min-w-0">
                 <h1 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{customization?.title || "Mi Advantage"}</h1>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">{currentAdminRole === 'super_admin' ? 'Super Administrator' : 'Administrator'}</p>
@@ -1658,7 +1707,7 @@ export default function AdminDashboard({
           {customization?.logo_url && !sidebarCollapsed ? (
             <img src={customization.logo_url} alt="Company Logo" className="h-10 w-auto object-contain" />
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">MA</div>
+            <BrandMonogram brand={cardBrand} className="w-10 h-10 rounded-xl text-sm" />
           )}
           {!sidebarCollapsed && (
             <div className="flex-1 min-w-0">
@@ -3170,6 +3219,107 @@ export default function AdminDashboard({
                 </div>
               </div>
 
+              {/* ROW 1b: Member Card Branding */}
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">
+                  Member Card Branding
+                </h4>
+                <p className="text-[10px] text-slate-400 mb-4">
+                  These values are printed on both faces of the member card.
+                </p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="lg:col-span-1">
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                      Card Monogram
+                    </label>
+                    <input
+                      type="text"
+                      value={cardBrandInput}
+                      onChange={(e) => setCardBrandInput(e.target.value.toUpperCase())}
+                      placeholder="BP"
+                      maxLength={4}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Short prefix printed on the card, e.g. &quot;BP 010&quot;. Leave empty to
+                      derive it from the platform title.
+                    </p>
+                  </div>
+                  <div className="lg:col-span-1">
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                      Card Wordmark
+                    </label>
+                    <input
+                      type="text"
+                      value={cardWordmarkInput}
+                      onChange={(e) => setCardWordmarkInput(e.target.value)}
+                      placeholder="THE BEYOND"
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Top-left wordmark on the card front.
+                    </p>
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                      Card Logo
+                    </label>
+                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
+                      <div className="w-14 h-14 bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                        {cardLogoInput ? (
+                          <img src={cardLogoInput} alt="Card logo" className="w-full h-full object-contain" />
+                        ) : (
+                          <span
+                            className="font-black italic text-lg"
+                            style={{
+                              background: "linear-gradient(135deg, #fff2cf 0%, #e8b13a 40%, #b07c1c 70%, #ffd98a 100%)",
+                              WebkitBackgroundClip: "text",
+                              backgroundClip: "text",
+                              color: "transparent",
+                            }}
+                          >
+                            {cardBrand || "MA"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleCardLogoFileChange}
+                          className="hidden"
+                          id="admin-card-logo-upload"
+                        />
+                        <label
+                          htmlFor="admin-card-logo-upload"
+                          className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block"
+                        >
+                          Upload Card Logo
+                        </label>
+                        <input
+                          type="text"
+                          value={cardLogoInput.startsWith("data:") ? "" : cardLogoInput}
+                          onChange={(e) => setCardLogoInput(e.target.value)}
+                          placeholder="…or paste image URL"
+                          className="mt-2 w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={saveBrandingCard}
+                          className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                        >
+                          Save Card Branding
+                        </button>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Printed on the card front. Leave empty to use the gold monogram.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+
               {/* ROW 2: Homepage Content */}
               <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
                 <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Homepage Content</h4>
@@ -3251,9 +3401,9 @@ export default function AdminDashboard({
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Background Type</label>
                     <select value={homeBgType} onChange={(e) => setHomeBgType(e.target.value as "none" | "image" | "gradient")} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
-                      <option value="none">None (default gradient)</option>
-                      <option value="image">Image URL</option>
-                      <option value="gradient">Custom Gradient</option>
+                      <option value="none">Default card artwork</option>
+                      <option value="image">Custom image</option>
+                      <option value="gradient">Custom gradient</option>
                     </select>
                   </div>
                   <div>
@@ -3274,7 +3424,11 @@ export default function AdminDashboard({
                     </button>
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Tip: Use an image of a person scanning a member card for the hero background.</p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  The artwork fills the whole home page — no content cards are laid over it.
+                  Choose &quot;Default card artwork&quot; for the built-in card-themed design, or
+                  point &quot;Custom image&quot; at your own photo.
+                </p>
               </div>
 
               {/* ROW 3: Login/Signup + Footer */}
@@ -3641,151 +3795,69 @@ export default function AdminDashboard({
                 </p>
               </div>
 
-              {/* CARD CONTAINER WITH SHADOW & RADIUS */}
-              <div className="flex justify-center my-6">
-                {/* Visual Loyalty Card */}
-                <div
-                  id="loyalty-card-graphic"
-                  className="w-[380px] h-[240px] rounded-2xl bg-gradient-to-br from-emerald-900 via-teal-950 to-slate-950 text-white p-5 flex flex-col justify-between shadow-xl relative overflow-hidden border border-emerald-800/50"
-                >
-                  {/* Decorative mesh */}
-                  <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:12px_12px] pointer-events-none" />
-                  <div className="absolute -right-16 -top-16 w-36 h-36 rounded-full bg-emerald-500/20 blur-3xl pointer-events-none" />
-                  <div className="absolute -left-16 -bottom-16 w-36 h-36 rounded-full bg-teal-500/20 blur-3xl pointer-events-none" />
-
-                  {/* Top bar with Logo & Title */}
-                  <div className="flex items-start justify-between relative z-10">
-                    <div className="flex items-center gap-2">
-                      {customization?.logo_url ? (
-                        <img
-                          src={customization.logo_url}
-                          alt="Logo"
-                          className="h-6 w-auto object-contain"
-                        />
-                      ) : (
-                        <div className="w-6 h-6 rounded bg-emerald-500 text-white flex items-center justify-center font-black text-xs">
-                          MA
-                        </div>
-                      )}
-                      <div className="text-left">
-                        <span className="font-sans text-[10px] uppercase tracking-wider font-extrabold text-slate-100 block">
-                          {customization?.title
-                            ? customization.title.slice(0, 24)
-                            : "Mi Advantage"}
-                        </span>
-                        <span className="block text-[6px] uppercase text-emerald-400 font-bold tracking-widest">
-                          {customization?.subtitle || "Kigali Premium Privilege"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[8px] font-black uppercase tracking-widest">
-                      Member Card
-                    </div>
-                  </div>
-
-                  {/* Center with Customer Info & QR Code */}
-                  <div className="flex items-center justify-between gap-4 mt-1 relative z-10 text-left">
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-[7px] uppercase text-emerald-400 font-bold tracking-widest">
-                        CARDHOLDER
-                      </p>
-                      <h4 className="font-sans font-black text-sm tracking-tight truncate uppercase text-white">
-                        {selectedCardCustomer.name}
-                      </h4>
-                      <p className="text-[9px] text-slate-400 font-medium shrink-0">
-                        {selectedCardCustomer.phone}
-                      </p>
-                    </div>
-
-                    {/* QR Code Graphic */}
-                    <div className="bg-white dark:bg-slate-900 p-1 rounded-xl shadow-lg shrink-0 border border-emerald-500/20">
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(buildCardUrl(selectedCardCustomer.qr_code))}&margin=1`}
-                        alt="QR Code"
-                        className="w-16 h-16"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Bottom Bar: Expiry & Card ID */}
-                  <div className="flex items-end justify-between relative z-10 border-t border-emerald-800/40 pt-2.5 mt-1">
-                    <div className="text-left">
-                      <p className="text-[6px] uppercase text-emerald-400 font-bold tracking-wider">
-                        Card ID
-                      </p>
-                      <p className="font-mono text-[10px] font-black text-emerald-300 tracking-wider">
-                        {selectedCardCustomer.qr_code}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[6px] uppercase text-amber-400 font-bold tracking-wider">
-                        Valid Until
-                      </p>
-                      <p className="font-sans text-[10px] font-black text-amber-300">
-                        {selectedCardCustomer.valid_until || "NEVER EXPIRES"}
-                      </p>
-                    </div>
-                  </div>
+              {/* CARD PREVIEW - FRONT / BACK FACES */}
+              <div className="flex flex-col items-center my-6 gap-4">
+                <div className="flex rounded-full bg-slate-100 dark:bg-slate-800 p-1">
+                  {(["front", "back"] as CardFace[]).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setCardFace(f)}
+                      className={
+                        "px-5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer " +
+                        (cardFace === f
+                          ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100")
+                      }
+                    >
+                      {f === "front" ? "Front" : "Back / QR"}
+                    </button>
+                  ))}
                 </div>
+
+                <div id="loyalty-card-graphic" className="w-full max-w-[420px]">
+                  <MemberCard
+                    customer={selectedCardCustomer}
+                    face={cardFace}
+                    brand={cardBrand}
+                    wordmark={cardWordmark}
+                    cardLogoUrl={cardLogoUrl}
+                    systemLogoUrl={systemLogoUrl}
+                  />
+                </div>
+
+                <p className="text-[10px] text-slate-400 font-semibold text-center -mt-2 max-w-[340px]">
+                  {cardFace === "front"
+                    ? "Front face - the member brand artwork."
+                    : "Back face - the QR code opens the card on any phone camera and is read by our own terminal."}
+                </p>
               </div>
 
               {/* DOWNLOAD & ACTION OPTIONS */}
               <div className="grid grid-cols-2 gap-3 mt-6">
                 <button
                   onClick={() => {
-                    // Create direct dynamic download of card as SVG
-                    const logoMarkup = customization?.logo_url
-                      ? `<ImageIcon href="${customization.logo_url}" x="20" y="25" height="24" width="60" />`
-                      : `<rect x="20" y="25" width="24" height="24" rx="4" fill="#10b981" />
-                         <text x="32" y="41" font-family="'Inter', sans-serif" font-weight="900" font-size="11" fill="#ffffff" text-anchor="middle">MA</text>`;
-
-                    const svgContent = `
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 240" width="380" height="240">
-                      <defs>
-                        <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                          <stop offset="0%" stop-color="#064e3b" />
-                          <stop offset="50%" stop-color="#042f2e" />
-                          <stop offset="100%" stop-color="#020617" />
-                        </linearGradient>
-                      </defs>
-                      
-                      <!-- Card Background -->
-                      <rect width="380" height="240" rx="16" fill="url(#cardGrad)" stroke="#047857" stroke-width="1.5" />
-                      
-                      <!-- Decorative blur lights -->
-                      <circle cx="340" cy="40" r="60" fill="#10b981" opacity="0.15" filter="blur(20px)" />
-                      <circle cx="40" cy="200" r="60" fill="#14b8a6" opacity="0.15" filter="blur(20px)" />
-                      
-                      <!-- Header elements -->
-                      ${logoMarkup}
-                      <text x="52" y="34" font-family="'Inter', sans-serif" font-weight="800" font-size="9" fill="#ffffff" letter-spacing="1">${(customization?.title || "Mi Advantage").toUpperCase().slice(0, 24)}</text>
-                      <text x="52" y="44" font-family="'Inter', sans-serif" font-weight="700" font-size="5" fill="#34d399" letter-spacing="1">${(customization?.subtitle || "Kigali Premium Privilege").toUpperCase().slice(0, 28)}</text>
-                      
-                      <rect x="290" y="22" width="70" height="16" rx="4" fill="#10b981" fill-opacity="0.1" stroke="#10b981" stroke-width="0.5" stroke-opacity="0.3" />
-                      <text x="325" y="32" font-family="'Inter', sans-serif" font-weight="900" font-size="7" fill="#6ee7b7" text-anchor="middle" letter-spacing="1">MEMBER CARD</text>
-                      
-                      <!-- Cardholder Details -->
-                      <text x="20" y="90" font-family="'Inter', sans-serif" font-weight="700" font-size="6" fill="#34d399" letter-spacing="1">CARDHOLDER</text>
-                      <text x="20" y="112" font-family="'Inter', sans-serif" font-weight="900" font-size="14" fill="#ffffff">${selectedCardCustomer.name.toUpperCase()}</text>
-                      <text x="20" y="132" font-family="'Inter', sans-serif" font-weight="500" font-size="8" fill="#cbd5e1">${selectedCardCustomer.phone}</text>
-                      
-                      <!-- QR Code wrapper -->
-                      <rect x="280" y="80" width="80" height="80" rx="8" fill="#ffffff" />
-                      <ImageIcon href="https://api.qrserver.com/v1/create-qr-code/?size=100x100&amp;data=${encodeURIComponent(buildCardUrl(selectedCardCustomer.qr_code))}&amp;margin=1" x="284" y="84" height="72" width="72" />
-                      
-                      <!-- Separator line -->
-                      <line x1="20" y1="185" x2="360" y2="185" stroke="#064e3b" stroke-width="1" stroke-opacity="0.4" />
-                      
-                      <!-- Footer Info -->
-                      
-                      <text x="20" y="202" font-family="'Inter', sans-serif" font-weight="700" font-size="5" fill="#34d399" letter-spacing="1">CARD ID</text>
-                      <text x="20" y="218" font-family="'Courier New', monospace" font-weight="800" font-size="9" fill="#6ee7b7" letter-spacing="1">${selectedCardCustomer.qr_code}</text>
-                      
-                      <text x="360" y="202" font-family="'Inter', sans-serif" font-weight="700" font-size="5" fill="#f59e0b" letter-spacing="1" text-anchor="end">VALID UNTIL</text>
-                      <text x="360" y="218" font-family="'Inter', sans-serif" font-weight="800" font-size="9" fill="#fcd34d" text-anchor="end">${selectedCardCustomer.valid_until || "NEVER EXPIRES"}</text>
-                    </svg>
-                    `;
+                    // Download the member card as a vector file.
+                    // Both faces are exported so the card can be printed double-sided.
+                    const customer = selectedCardCustomer;
+                    const exportOpts = {
+                      brand: cardBrand,
+                      wordmark: cardWordmark,
+                      logoUrl: cardLogoUrl || undefined,
+                      name: customer.name,
+                      phone: customer.phone,
+                      number: deriveCardNumber(customer.qr_code),
+                      expiry: formatCardExpiry(customer.valid_until),
+                    };
+                    const faces: Record<CardFace, string> = {
+                      front: buildCardFrontSvg(exportOpts),
+                      back: buildCardBackSvg({
+                        brand: cardBrand,
+                        number: exportOpts.number,
+                        expiry: exportOpts.expiry,
+                        qrUrl: cardQrImageUrl(customer.qr_code, 600),
+                      }),
+                    };
+                    const svgContent = faces[cardFace];
 
                     const blob = new Blob([svgContent], {
                       type: "image/svg+xml;charset=utf-8",
@@ -3793,7 +3865,7 @@ export default function AdminDashboard({
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement("a");
                     link.href = url;
-                    link.download = `MA-Card-${selectedCardCustomer.name.replace(/\s+/g, "-")}.svg`;
+                    link.download = `MA-Card-${customer.name.replace(/\s+/g, "-")}-${cardFace}.svg`;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
@@ -3802,109 +3874,77 @@ export default function AdminDashboard({
                   className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download SVG Card</span>
+                  <span>Download {cardFace === "front" ? "Front" : "Back"} SVG</span>
                 </button>
 
                 <button
                   onClick={() => {
-                    // Simple printable dynamic card pop-out window
+                    // Printable card: both faces are rendered from the same
+                    // artwork used on screen, so the print matches the preview.
+                    const customer = selectedCardCustomer;
+                    const number = deriveCardNumber(customer.qr_code);
+                    const expiry = formatCardExpiry(customer.valid_until);
+                    const frontSvg = buildCardFrontSvg({
+                      brand: cardBrand,
+                      wordmark: cardWordmark,
+                      logoUrl: cardLogoUrl || undefined,
+                      name: customer.name,
+                      phone: customer.phone,
+                      number,
+                      expiry,
+                    });
+                    const backSvg = buildCardBackSvg({
+                      brand: cardBrand,
+                      number,
+                      expiry,
+                      qrUrl: cardQrImageUrl(customer.qr_code, 600),
+                    });
+
                     const printWindow = window.open("", "_blank");
                     if (printWindow) {
-                      printWindow.document.write(`
-                        <html>
+                      printWindow.document.write(
+                        `<html>
                           <head>
-                            <title>Print Card - ${selectedCardCustomer.name}</title>
+                            <title>Print Card - ${customer.name}</title>
                             <style>
                               body {
-                                display: flex;
-                                justify-content: center;
-                                align-items: center;
-                                height: 100vh;
                                 margin: 0;
-                                font-family: 'Inter', sans-serif;
-                                background-color: #f8fafc;
-                              }
-                              .card {
-                                width: 380px;
-                                height: 240px;
-                                border-radius: 16px;
-                                background: linear-gradient(135deg, #064e3b 0%, #042f2e 50%, #020617 100%);
-                                color: white;
-                                padding: 20px;
-                                box-sizing: border-box;
+                                padding: 24px;
                                 display: flex;
                                 flex-direction: column;
-                                justify-content: space-between;
-                                position: relative;
-                                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-                                -webkit-print-color-adjust: exact;
+                                align-items: center;
+                                gap: 28px;
+                                font-family: 'Inter', sans-serif;
+                                background-color: #f1f5f9;
                               }
-                              .header { display: flex; justify-content: space-between; align-items: center; }
-                              .logo { display: flex; align-items: center; gap: 8px; }
-                              .logo-box { width: 24px; height: 24px; background-color: #10b981; border-radius: 4px; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 11px; }
-                              .title { font-weight: 800; font-size: 10px; letter-spacing: 1px; }
-                              .subtitle { font-size: 6px; color: #34d399; letter-spacing: 1px; text-transform: uppercase; }
-                              .badge { padding: 4px 8px; border-radius: 4px; background-color: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #6ee7b7; font-weight: 900; font-size: 7px; letter-spacing: 1px; }
-                              .body { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
-                              .holder-label { font-weight: 700; font-size: 6px; color: #34d399; letter-spacing: 1px; }
-                              .holder-name { font-weight: 900; font-size: 14px; margin: 2px 0; }
-                              .holder-contact { font-size: 8px; color: #cbd5e1; margin: 1px 0; }
-                              .qr-box { background: white; padding: 4px; border-radius: 8px; width: 64px; height: 64px; }
-                              .qr-box img { width: 100%; height: 100%; }
-                              .footer { display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid rgba(6,78,59,0.4); padding-top: 10px; }
-                              .tok-lbl { font-size: 5px; color: #10b981; letter-spacing: 1px; }
-                              .tok-val { font-family: monospace; font-weight: 800; font-size: 11px; }
-                              .exp-lbl { font-size: 5px; color: #f59e0b; letter-spacing: 1px; text-align: right; }
-                              .exp-val { font-weight: 800; font-size: 9px; color: #fcd34d; text-align: right; }
+                              .sheet { width: 680px; }
+                              .sheet svg { width: 100%; height: auto; display: block; border-radius: 18px; }
+                              .label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #64748b; font-weight: 800; margin-bottom: 8px; }
                               @media print {
-                                body { background-color: white; }
-                                .card { box-shadow: none; border: 1px solid #064e3b; }
+                                body { background: #fff; padding: 0; gap: 0; }
+                                .sheet { width: 100%; page-break-after: always; }
+                                .sheet:last-child { page-break-after: auto; }
+                                .label { display: none; }
                               }
                             </style>
                           </head>
                           <body>
-                            <div class="card">
-                              <div class="header">
-                                <div class="logo">
-                                  ${customization?.logo_url ? `<img src="${customization.logo_url}" style="height:24px; max-width:60px; object-fit:contain;" />` : `<div class="logo-box">MA</div>`}
-                                  <div>
-                                    <div class="title">${(customization?.title || "Mi Advantage").toUpperCase().slice(0, 24)}</div>
-                                    <div class="subtitle">${customization?.subtitle || "Kigali Premium Privilege"}</div>
-                                  </div>
-                                </div>
-                                <div class="badge">MEMBER CARD</div>
-                              </div>
-                              <div class="body">
-                                <div>
-                                  <div class="holder-label">CARDHOLDER</div>
-                                  <div class="holder-name">${selectedCardCustomer.name.toUpperCase()}</div>
-                                  <div class="holder-contact">${selectedCardCustomer.phone}</div>
-                                </div>
-                                <div class="qr-box">
-                                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(buildCardUrl(selectedCardCustomer.qr_code))}&margin=1" />
-                                </div>
-                              </div>
-                              <div class="footer">
-                                <div>
-                                  <div class="tok-lbl">CARD ID</div>
-                                  <div class="tok-val">${selectedCardCustomer.qr_code}</div>
-                                </div>
-                                <div>
-                                  <div class="exp-lbl">VALID UNTIL</div>
-                                  <div class="exp-val">${selectedCardCustomer.valid_until || "NEVER EXPIRES"}</div>
-                                </div>
-                              </div>
+                            <div class="sheet">
+                              <div class="label">Front</div>
+                              ${frontSvg}
+                            </div>
+                            <div class="sheet">
+                              <div class="label">Back</div>
+                              ${backSvg}
                             </div>
                             <script>
                               window.onload = function() {
-                                setTimeout(function() {
-                                  window.print();
-                                }, 500);
+                                setTimeout(function() { window.print(); }, 900);
                               };
                             </script>
                           </body>
-                        </html>
-                      `);
+                        </html>`,
+                      );
                       printWindow.document.close();
                     }
                   }}
