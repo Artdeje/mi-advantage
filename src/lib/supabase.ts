@@ -95,11 +95,15 @@ export function extractScanCode(raw: string): string {
   return text.toUpperCase();
 }
 
-// Deep link encoded into a shop counter QR. Scanning it with any phone camera
-// opens the scan terminal with that shop pre-selected (fills the discount form).
-export function buildShopUrl(code: string): string {
-  const base = `${window.location.origin}${window.location.pathname}#/scan`;
-  return code ? `${base}?shop=${encodeURIComponent(code)}` : base;
+// Deep link encoded into a shop counter QR — the staff entrance. Scanning it
+// opens the sign-in screen with the company email pre-filled (only the
+// password is typed), then lands in the company scanner with the outlet
+// pre-selected. The direct #/scan?shop=<code> deep link stays available for
+// the public terminal form.
+export function buildShopUrl(shop: { qr_code?: string | null; id?: string; email: string }): string {
+  const code = (shop.qr_code || shop.id || "").trim();
+  const base = `${window.location.origin}${window.location.pathname}#/login`;
+  return `${base}?shop=${encodeURIComponent(shop.email)}&shopQr=${encodeURIComponent(code)}`;
 }
 
 // Deep link encoded into a MEMBER CARD QR.

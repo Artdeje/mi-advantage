@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   User,
   Store,
+  X,
 } from './AdminIcons';
 import ThemeToggle from './ThemeToggle';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -47,6 +48,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   // Scanned customer state
   const [scannedCustomer, setScannedCustomer] = useState<Customer | null>(null);
   const [scanDone, setScanDone] = useState(false);
+  // Company details opened by tapping a partner card in the directory.
+  const [detailShop, setDetailShop] = useState<Shop | null>(null);
   const [amountBefore, setAmountBefore] = useState<number | ''>('');
   const [scanErrorState, setScanErrorState] = useState<string | null>(null);
   // Card validation outcome shown to the user: "Card is valid" / "Renew subscription"
@@ -525,6 +528,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       )}
 
       {showPartners && scannedCustomer ? (
+          <>
           <div id="member-partners-panel" className="space-y-6 scroll-mt-6">
             {/* Verified member banner */}
             <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
@@ -561,7 +565,12 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {shops.map((s) => (
-                    <div key={s.id} className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setDetailShop(s)}
+                      className="text-left bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 rounded-2xl p-4 transition-all cursor-pointer group"
+                    >
                       <div className="flex items-center gap-3">
                         {s.profile_picture ? (
                           <img src={s.profile_picture} alt={s.shop_name} className="w-11 h-11 rounded-xl object-cover shrink-0" />
@@ -571,14 +580,14 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                           </span>
                         )}
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-800 dark:text-slate-100 truncate">{s.shop_name}</p>
+                          <p className="font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300">{s.shop_name}</p>
                           <span className="inline-block mt-0.5 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{s.discount_percent}% OFF</span>
                         </div>
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-2 min-h-[2rem]">
                         {s.description || 'Verified Mi Advantage partner.'}
                       </p>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
                         {s.business_type && (
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-full">
                             {BUSINESS_TYPE_LABELS[s.business_type] || s.business_type}
@@ -587,13 +596,86 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                         <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900 px-2 py-0.5 rounded-full">
                           {DISCOUNT_SCOPE_LABELS[s.discount_scope || 'all'] || 'All items'}
                         </span>
+                        <span className="ml-auto text-[11px] font-bold text-emerald-600 dark:text-emerald-400 group-hover:underline">Details →</span>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
             </div>
           </div>
+
+          {/* Company details modal — tap a partner card to open it */}
+          {detailShop && (
+            <div
+              className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+              onClick={() => setDetailShop(null)}
+            >
+              <div
+                className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full shadow-2xl overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="bg-gradient-to-br from-emerald-700 to-teal-800 p-6 text-white relative">
+                  <button
+                    onClick={() => setDetailShop(null)}
+                    aria-label="Close details"
+                    className="absolute top-4 right-4 p-1.5 bg-white/15 hover:bg-white/25 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <div className="flex items-center gap-4">
+                    {detailShop.profile_picture ? (
+                      <img src={detailShop.profile_picture} alt={detailShop.shop_name} className="w-16 h-16 rounded-2xl object-cover border-2 border-white/40" />
+                    ) : (
+                      <span className="w-16 h-16 rounded-2xl bg-white/15 border-2 border-white/40 text-white flex items-center justify-center font-black text-2xl">
+                        {detailShop.shop_name.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <h3 className="text-lg font-black truncate">{detailShop.shop_name}</h3>
+                      <span className="inline-block mt-1 bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-200 text-[11px] font-black px-2.5 py-0.5 rounded-full">
+                        {detailShop.discount_percent}% MEMBER DISCOUNT
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 space-y-3 text-sm">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">About this partner</p>
+                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                      {detailShop.description || 'A verified Mi Advantage partner. Show your member card at the counter to save instantly on every visit.'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {detailShop.business_type && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700">
+                        {BUSINESS_TYPE_LABELS[detailShop.business_type] || detailShop.business_type}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+                      {DISCOUNT_SCOPE_LABELS[detailShop.discount_scope || 'all'] || 'All items'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Contact</p>
+                      <p className="font-bold text-slate-700 dark:text-slate-200 break-all">{detailShop.email}</p>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Partner since</p>
+                      <p className="font-bold text-slate-700 dark:text-slate-200">
+                        {detailShop.created_at ? new Date(detailShop.created_at).toLocaleDateString() : '—'}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Show this member card ({scannedCustomer?.qr_code}) at their counter to redeem.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          </>
         ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         

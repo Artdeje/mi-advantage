@@ -260,14 +260,14 @@ ${SVG_DEFS}
   <image href="${svgEsc(opts.qrUrl)}" x="606" y="112" width="290" height="290" preserveAspectRatio="xMidYMid meet"/>
 
   <g font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900">
-    <rect x="360" y="470" width="180" height="58" rx="10" fill="none" stroke="#e8b13a" stroke-width="2"/>
-    <text x="382" y="510" font-size="34" fill="#00c8f0">${svgEsc(opts.brand)}</text>
-    <text x="452" y="510" font-size="34" fill="#ffffff" letter-spacing="2">${svgEsc(opts.number)}</text>
-    <rect x="556" y="470" width="360" height="58" rx="10" fill="none" stroke="#e8b13a" stroke-width="2"/>
-    <text x="578" y="509" font-size="30" fill="#e8b13a">EXPIRES</text>
-    <text x="700" y="509" font-size="30" fill="#ffffff" letter-spacing="1">${svgEsc(opts.expiry)}</text>
+    <rect x="360" y="462" width="180" height="74" rx="10" fill="none" stroke="#e8b13a" stroke-width="2"/>
+    <text x="376" y="488" font-size="19" fill="#00c8f0" letter-spacing="4">${svgEsc(opts.brand)}</text>
+    <text x="376" y="520" font-size="31" fill="#ffffff" letter-spacing="2">${svgEsc(opts.number)}</text>
+    <rect x="556" y="462" width="360" height="74" rx="10" fill="none" stroke="#e8b13a" stroke-width="2"/>
+    <text x="572" y="488" font-size="19" fill="#e8b13a" letter-spacing="4">EXPIRES</text>
+    <text x="572" y="520" font-size="31" fill="#ffffff" letter-spacing="2">${svgEsc(opts.expiry)}</text>
   </g>
-  <rect x="546" y="466" width="2" height="66" fill="#e8b13a"/>
+  <rect x="546" y="458" width="2" height="82" fill="#e8b13a"/>
 </svg>`;
 }
 
@@ -651,36 +651,52 @@ export function MemberCard({
 
         {/* ------------------- BOTTOM: card number + expiry ------------------- */}
         <div
-          className="absolute flex items-center"
-          style={{ right: "6%", bottom: "7.5%", gap: "2.2%" }}
+          className="absolute flex items-stretch"
+          style={{ right: "5.5%", bottom: "7%", gap: "2.2%" }}
         >
           <div
-            className="flex items-baseline rounded-[0.8cqw] px-[2.2cqw] py-[0.9cqw]"
+            className="flex flex-col justify-center rounded-[0.8cqw] px-[2.2cqw] py-[0.8cqw]"
             style={{ border: "1.4px solid rgba(232,177,58,0.9)" }}
           >
-            <span className="font-black tracking-tight" style={{ fontSize: "3.4cqw", color: CARD_CYAN }}>
+            <span
+              className="font-black uppercase"
+              style={{
+                fontSize: "1.55cqw",
+                letterSpacing: "0.28em",
+                color: CARD_CYAN,
+                marginBottom: "0.55cqw",
+              }}
+            >
               {brand}
             </span>
             <span
-              className="font-black tracking-[0.06em]"
-              style={{ fontSize: "3.4cqw", color: CARD_TEXT, marginLeft: "0.7cqw" }}
+              className="font-black tracking-[0.08em]"
+              style={{ fontSize: "3.1cqw", color: CARD_TEXT, lineHeight: 1 }}
             >
               {number}
             </span>
           </div>
 
-          <div style={{ width: "1.4px", height: "4.4cqw", background: "rgba(232,177,58,0.85)" }} />
+          <div style={{ width: "1.4px", background: "rgba(232,177,58,0.85)" }} />
 
           <div
-            className="flex items-baseline rounded-[0.8cqw] px-[2.2cqw] py-[0.9cqw]"
+            className="flex flex-col justify-center rounded-[0.8cqw] px-[2.2cqw] py-[0.8cqw]"
             style={{ border: "1.4px solid rgba(232,177,58,0.9)" }}
           >
-            <span className="font-black tracking-tight" style={{ fontSize: "3cqw", color: CARD_GOLD }}>
+            <span
+              className="font-black uppercase"
+              style={{
+                fontSize: "1.55cqw",
+                letterSpacing: "0.28em",
+                color: CARD_GOLD,
+                marginBottom: "0.55cqw",
+              }}
+            >
               EXPIRES
             </span>
             <span
-              className="font-black tracking-[0.04em]"
-              style={{ fontSize: "3cqw", color: CARD_TEXT, marginLeft: "1.1cqw" }}
+              className="font-black tracking-[0.06em]"
+              style={{ fontSize: "3.1cqw", color: CARD_TEXT, lineHeight: 1 }}
             >
               {expiry}
             </span>

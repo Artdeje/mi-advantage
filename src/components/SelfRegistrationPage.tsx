@@ -255,10 +255,11 @@ export default function SelfRegistrationPage() {
     doc.setTextColor(255, 255, 255);
     doc.text(number, 38, 47);
     doc.setTextColor(232, 177, 58);
-    doc.setFontSize(7.5);
-    doc.text('EXPIRES', 52, 47);
+    doc.setFontSize(5.5);
+    doc.text('EXPIRES', 52, 44.4);
     doc.setTextColor(255, 255, 255);
-    doc.text(expiry, 64, 47);
+    doc.setFontSize(9);
+    doc.text(expiry, 52, 48.6);
 
     doc.save(`MA-Card-${customer.qr_code}.pdf`);
   };

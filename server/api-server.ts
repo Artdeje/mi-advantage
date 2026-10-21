@@ -554,6 +554,18 @@ app.get("/api/db/test", async (_req, res) => {
   }
 });
 
+// Lightweight session check for the client boot path. The auth middleware
+// above already verified the Bearer token; no DB round-trip needed.
+app.get("/api/db/auth/validate", (_req, res) => {
+  res.json({ valid: true });
+});
+
+// Lightweight session check for the client boot path. The auth middleware
+// above already verified the Bearer token; no DB round-trip needed.
+app.get("/api/db/auth/validate", (_req, res) => {
+  res.json({ valid: true });
+});
+
 // Default seed (idempotent upserts). For existing MySQL data, use the
 // one-off migration script instead: npm run db:seed-supabase
 const DEFAULT_SEED: Record<string, any[]> = {

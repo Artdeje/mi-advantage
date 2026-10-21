@@ -76,6 +76,7 @@ import autoTable from "jspdf-autotable";
 import { readImageAsDataUrl } from "../lib/imageUtil";
 import { QRCodeCanvas } from "qrcode.react";
 import ThemeToggle from "./ThemeToggle";
+import ShopCounterQr, { downloadShopQrSvg, printShopQrSvg } from "./ShopCounterQr";
 import {
   MemberCard,
   deriveCardBrand,
@@ -3965,29 +3966,49 @@ export default function AdminDashboard({
               <div>
                 <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">{qrModalShop.shop_name}</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Printing &amp; posting this at the counter: scanning it opens the Scan page with{" "}
-                  <strong>{qrModalShop.shop_name}</strong> already selected, so a member&apos;s{" "}
-                  {qrModalShop.discount_percent}% discount is filled in for the cashier.
+                  Counter standee: staff scan it, the sign-in screen opens with the company email pre-filled
+                  (password check-in), then lands in this account&apos;s scanner with the outlet pre-selected.
                 </p>
               </div>
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 inline-block mx-auto">
-                <QRCodeCanvas
-                  id="shop-qr-canvas"
-                  value={buildShopUrl(qrModalShop.qr_code || qrModalShop.id)}
-                  size={200}
-                  level="M"
-                  includeMargin
-                />
-              </div>
+              <ShopCounterQr
+                shop={qrModalShop}
+                qrValue={buildShopUrl(qrModalShop)}
+                systemTitle={customization?.title || "BP Discount System"}
+                className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 mx-auto [&_svg]:w-full [&_svg]:h-auto"
+              />
               <div className="font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900 rounded-xl px-3 py-2 text-sm tracking-widest">
                 {qrModalShop.qr_code || qrModalShop.id}
               </div>
+              <QRCodeCanvas
+                id="shop-qr-canvas"
+                value={buildShopUrl(qrModalShop)}
+                size={200}
+                level="M"
+                includeMargin
+                className="hidden"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => downloadShopQrSvg(qrModalShop, buildShopUrl(qrModalShop), customization?.title || "BP Discount System")}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Standee SVG</span>
+                </button>
+                <button
+                  onClick={() => printShopQrSvg(qrModalShop, buildShopUrl(qrModalShop), customization?.title || "BP Discount System")}
+                  className="flex-1 py-2.5 bg-slate-800 dark:bg-slate-100 hover:bg-slate-700 dark:hover:bg-white text-white dark:text-slate-900 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print</span>
+                </button>
+              </div>
               <button
                 onClick={handleDownloadShopQR}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <Download className="w-4 h-4" />
-                <span>Download PNG</span>
+                <span>Plain QR PNG</span>
               </button>
               <button
                 onClick={() => { setQrModalShop(null); }}

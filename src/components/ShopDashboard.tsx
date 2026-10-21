@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, getCustomerCardBlockReason, buildShopUrl } from '../lib/supabase';
 import { readImageAsDataUrl } from '../lib/imageUtil';
-import { Shop, Sale, Customer, Product } from '../types';
+import { Shop, Sale, Customer, Product, Customization } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { QRCodeCanvas } from 'qrcode.react';
+import ShopCounterQr from './ShopCounterQr';
 import {
   Store, Camera, RefreshCw, ShoppingBag, CheckCircle2, AlertTriangle,
   User, Users, DollarSign, Tag, TrendingUp, History, Upload, UserCheck,
@@ -16,6 +16,7 @@ import ThemeToggle from './ThemeToggle';
 
 export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: string; email: string }; onLogout?: () => void }) {
   const [shopDetails, setShopDetails] = useState<Shop | null>(null);
+  const [customization, setCustomization] = useState<Customization | null>(null);
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -263,6 +264,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
   // Load shop data
   const loadData = async () => {
     setLoading(true);
+    db.getCustomization().then(setCustomization).catch(() => setCustomization(null));
     const shopsList = await db.getShops();
     const currentShop = shopsList.find(s => s.id === shopUser.id);
     if (currentShop) {
@@ -1213,20 +1215,23 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
                 <div className="lg:col-span-1">
-                  {/* MY COUNTER QR — guests scan this to unlock this shop, no login */}
-                  <div className="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 mb-5 flex items-center gap-4">
+                  {/* MY COUNTER QR — staff scans it to sign into this account */}
+                  <div className="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 mb-5">
                     {shopDetails?.qr_code ? (
                       <>
-                        <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-1.5 bg-white dark:bg-slate-900 shrink-0">
-                          <QRCodeCanvas value={buildShopUrl(shopDetails.qr_code || shopDetails.id)} size={84} level="M" includeMargin />
-                        </div>
-                        <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-3">
                           <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">My counter QR • active</p>
-                          <p className="font-mono font-black text-slate-800 dark:text-slate-100 tracking-widest">{shopDetails.qr_code}</p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
-                            Display at your counter. Guests scan it to autoselect {shopDetails.shop_name} and fill the discount form — no login needed.
-                          </p>
+                          <span className="font-mono font-black text-[10px] text-slate-800 dark:text-slate-100 tracking-widest">{shopDetails.qr_code}</span>
                         </div>
+                        <ShopCounterQr
+                          shop={shopDetails}
+                          qrValue={buildShopUrl(shopDetails)}
+                          systemTitle={customization?.title || 'BP Discount System'}
+                          className="w-40 max-w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 mx-auto [&>div]:w-full [&_svg]:w-full [&_svg]:h-auto"
+                        />
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-2.5">
+                          Print and display at your counter. Staff scan it, enter the company password, and land in this account&apos;s scanner.
+                        </p>
                       </>
                     ) : (
                       <div className="flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 rounded-xl p-3 w-full">

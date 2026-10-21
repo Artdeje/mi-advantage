@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../lib/supabase";
 import { Customization } from "../types";
-import { Lock as LockIcon, Mail as MailIcon, Eye as EyeIcon, EyeOff as EyeOffIcon, KeyRound as KeyRoundIcon } from "../components/AdminIcons";
+import { Lock as LockIcon, Mail as MailIcon, Eye as EyeIcon, EyeOff as EyeOffIcon, KeyRound as KeyRoundIcon, QrCode as QrCodeIcon } from "../components/AdminIcons";
 import ThemeToggle from "../components/ThemeToggle";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 
 export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "admin" | "shop") => void }) {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [cust, setCust] = useState<Customization | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
@@ -73,13 +72,18 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
       if (result.error) {
         setLoginError(result.error);
       } else if (result.user) {
-        // If we arrived here from a shop QR scan, redirect to the scanner
-        // with the shop pre-selected instead of the dashboard.
+        // If we arrived here from a scanned counter QR, do a full-page
+        // redirect into the scanner — the freshly stored session mounts the
+        // shop terminal directly and a transient SPA redirect cannot race it.
         if (shopQrParam && result.user.role === "shop") {
-          navigate(`/#/scan?shop=${encodeURIComponent(shopQrParam)}`);
-        } else {
-          onLoginSuccess(result.user.role as "admin" | "shop");
+          window.location.replace(
+            window.location.pathname +
+              "?entrance=" + Date.now() +
+              "#/scan?shop=" + encodeURIComponent(shopQrParam)
+          );
+          return;
         }
+        onLoginSuccess(result.user.role as "admin" | "shop");
       }
     } catch {
       setLoginError("Auth connection error. Please try again.");
@@ -104,10 +108,14 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
             const loginResult = await db.login(emailInput, passwordInput);
             if (loginResult.user) {
               if (shopQrParam && loginResult.user.role === "shop") {
-                navigate(`/#/scan?shop=${encodeURIComponent(shopQrParam)}`);
-              } else {
-                onLoginSuccess(loginResult.user.role as "admin" | "shop");
+                window.location.replace(
+                  window.location.pathname +
+                    "?entrance=" + Date.now() +
+                    "#/scan?shop=" + encodeURIComponent(shopQrParam)
+                );
+                return;
               }
+              onLoginSuccess(loginResult.user.role as "admin" | "shop");
             } else if (loginResult.error) {
               setOtpError(loginResult.error);
               setShowOtpVerify(false);
@@ -284,6 +292,14 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
           )}
           <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{siteName}</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{cust?.login_subtext || "Access your dashboard"}</p>
+          {shopQrParam && (
+            <div className="mt-3 inline-flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-full px-3.5 py-1.5">
+              <QrCodeIcon className="w-3.5 h-3.5" />
+              <span className="text-[11px] font-black uppercase tracking-wider">
+                {shopEmailParam ? "Counter sign-in — password only" : "Counter sign-in"}
+              </span>
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4 text-left">
