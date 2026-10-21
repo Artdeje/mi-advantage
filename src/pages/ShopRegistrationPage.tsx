@@ -7,6 +7,7 @@ import {
   DISCOUNT_SCOPE_LABELS,
 } from "../lib/supabase";
 import { Customization } from "../types";
+import { readImageAsDataUrl } from "../lib/imageUtil";
 import {
   Lock as LockIcon,
   Mail as MailIcon,
@@ -50,10 +51,9 @@ export default function ShopRegistrationPage({ onRegistered }: { onRegistered: (
   const siteName = cust?.title || "Mi Advantage";
   const logoUrl = cust?.logo_url || "";
 
-  const readFile = (file: File, set: (v: string) => void) => {
-    const reader = new FileReader();
-    reader.onload = (ev) => set((ev.target?.result as string) || "");
-    reader.readAsDataURL(file);
+  const readFile = async (file: File, set: (v: string) => void) => {
+    // Scanned contract / RDB letter images are downscaled; PDFs pass through.
+    set(await readImageAsDataUrl(file, 900, 0.75));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -221,8 +221,7 @@ export default function ShopRegistrationPage({ onRegistered }: { onRegistered: (
                 <label className="flex items-center gap-2 w-full px-3 py-2.5 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-500 dark:text-slate-400 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
                   <FileTextIcon className="w-4 h-4 shrink-0" />
                   <span className="truncate">{rdb ? "RDB attached" : "Upload file"}</span>
-                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], setRdb)} />
-                </label>
+                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], setRdb)} />                </label>
               </div>
             </div>
 

@@ -73,6 +73,7 @@ import {
 } from "recharts";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { readImageAsDataUrl } from "../lib/imageUtil";
 import { QRCodeCanvas } from "qrcode.react";
 import ThemeToggle from "./ThemeToggle";
 import {
@@ -742,33 +743,21 @@ export default function AdminDashboard({
     await saveBrandingField({ custom_css: customCss }, "Custom CSS");
   };
 
-  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setLogoInput(event.target?.result as string);
-      };
-      reader.readAsDataURL(e.target.files[0]);
+      setLogoInput(await readImageAsDataUrl(e.target.files[0], 320, 0.8));
     }
   };
 
-  const handleFaviconFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFaviconFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setFaviconInput(event.target?.result as string);
-      };
-      reader.readAsDataURL(e.target.files[0]);
+      setFaviconInput(await readImageAsDataUrl(e.target.files[0], 64, 0.8));
     }
   };
 
-  const handleCardLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCardLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setCardLogoInput(event.target?.result as string);
-      };
-      reader.readAsDataURL(e.target.files[0]);
+      setCardLogoInput(await readImageAsDataUrl(e.target.files[0], 256, 0.85));
     }
   };
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, getCustomerCardBlockReason, buildShopUrl } from '../lib/supabase';
+import { readImageAsDataUrl } from '../lib/imageUtil';
 import { Shop, Sale, Customer, Product } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -309,20 +310,18 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
     }
   };
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('Please upload an image file (png, jpeg, webp).');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const base64 = e.target?.result as string;
-      setProfilePic(base64);
-      // Save directly to the database
-      await db.updateShop(shopUser.id, { profile_picture: base64 });
-      alert('Shop profile picture updated successfully!');
-    };
-    reader.readAsDataURL(file);
+    // Downscale through a canvas so the stored base64 stays small — the
+    // picture rides inside the partners-panel list response.
+    const base64 = await readImageAsDataUrl(file, 256, 0.72);
+    setProfilePic(base64);
+    // Save directly to the database
+    const res = await db.updateShop(shopUser.id, { profile_picture: base64 });
+    alert(res.error ? 'Could not update profile picture: ' + res.error : 'Shop profile picture updated successfully!');
   };
 
   const handleDrop = (e: React.DragEvent) => {
