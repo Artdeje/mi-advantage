@@ -100,29 +100,20 @@ export default function LandingBackground({ className = "" }: { className?: stri
             THE <tspan fill="#00c8f0">BE</tspan>YOND
           </text>
           <rect x="44" y="94" width="150" height="2" fill="#e8b13a" opacity="0.85" />
-          <text x="44" y="160" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="46" fill="#00c8f0">
+          <text x="44" y="160" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="36" fill="#00c8f0" letterSpacing="2">
             THE BP
           </text>
-          <text x="44" y="212" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="46" fill="#00c8f0">
+          <text x="44" y="204" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="36" fill="#00c8f0" letterSpacing="2">
             DISCOUNT CARD
           </text>
           <text x="40" y="316" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontStyle="italic" fontSize="78" fill="#e8b13a">
             BP
           </text>
-          {/* QR placeholder */}
-          <rect x="418" y="52" width="150" height="150" rx="14" fill="#ffffff" />
-          <g fill="#0a1526">
-            {Array.from({ length: 25 }, (_, n) =>
-              Array.from({ length: 25 }, (_, m) =>
-                (n * 7 + m * 3 + (n * m) % 5) % 3 === 0 ? (
-                  <rect key={`${n}-${m}`} x={428 + m * 5.2} y={62 + n * 5.2} width="4.4" height="4.4" />
-                ) : null,
-              ),
-            )}
-          </g>
-          <rect x="428" y="62" width="26" height="26" fill="none" stroke="#0a1526" strokeWidth="4" />
-          <rect x="532" y="166" width="26" height="26" fill="none" stroke="#0a1526" strokeWidth="4" />
-          <rect x="428" y="166" width="26" height="26" fill="none" stroke="#0a1526" strokeWidth="4" />
+          {/* sweeping arc + glow nodes (front-face artwork) */}
+          <path d="M 470 330 C 560 250, 590 170, 560 60" stroke="url(#lb-arc-cyan)" strokeWidth="2.4" fill="none" opacity="0.75" />
+          <circle cx="560" cy="60" r="9" fill="url(#lb-cyan-glow)" />
+          <circle cx="560" cy="60" r="3" fill="#9defff" />
+          <ellipse cx="360" cy="90" rx="130" ry="46" fill="url(#lb-cyan-glow)" opacity="0.35" />
         </g>
 
         {/* subtle grid */}
