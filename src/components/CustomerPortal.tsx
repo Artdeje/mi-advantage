@@ -138,7 +138,18 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       const approvedShops = shopList.filter((s) => !s.status || s.status === 'approved');
       setShops(approvedShops);
       if (approvedShops.length > 0) {
-        setSelectedShopId((prev) => prev || approvedShops[0].id);
+        if (db.currentUser?.role === 'shop') {
+          // Logged-in partner: the form starts on its OWN outlet — never on
+          // the first row of the list (a ?shop= deep link can still override).
+          const ownId = db.currentUser.id || db.currentUser.shop_id || '';
+          const own = ownId ? approvedShops.find((s) => s.id === ownId) : null;
+          if (own) {
+            setSelectedShopId(own.id);
+            setShopAutoSelected(true);
+          }
+        } else {
+          setSelectedShopId((prev) => prev || approvedShops[0].id);
+        }
       }
     } catch (err) {
       console.error('Failed to load portal data:', err);
@@ -182,6 +193,19 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       setPendingShopCode('');
     }
   }, [pendingShopCode, shops]);
+
+  // Logged-in shop: the partner records sales for its OWN outlet, so the
+  // discount form auto-fills it (a ?shop= deep link still takes precedence).
+  // Guests get no auto-fill — they must scan or type a shop code.
+  useEffect(() => {
+    if (!isShopSession) return;
+    const ownId = db.currentUser?.id || db.currentUser?.shop_id || '';
+    if (!ownId || pendingShopCode || selectedShopId) return;
+    if (shops.some((s) => s.id === ownId)) {
+      setSelectedShopId(ownId);
+      setShopAutoSelected(true);
+    }
+  }, [isShopSession, shops, pendingShopCode, selectedShopId]);
 
   // External QR-scanner deep link (?card=CUST-0001): authenticate the card
   // and route to the partner directory (or fill the shop terminal form).
@@ -1005,15 +1029,19 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{activeShop.shop_name}</p>
-                    <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">{activeShop.discount_percent}% discount • QR autoselected</p>
+                    <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                      {activeShop.discount_percent}% discount • {isShopSession ? 'your outlet, auto-filled' : 'QR autoselected'}
+                    </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShopAutoSelected(false)}
-                    className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 uppercase tracking-wider cursor-pointer shrink-0"
-                  >
-                    Change
-                  </button>
+                  {!isShopSession && (
+                    <button
+                      type="button"
+                      onClick={() => setShopAutoSelected(false)}
+                      className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 uppercase tracking-wider cursor-pointer shrink-0"
+                    >
+                      Change
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-xl p-3 flex items-center gap-3">
@@ -1022,13 +1050,19 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">No shop selected</p>
-                    <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">Scan the shop QR above to select this outlet.</p>
+                    <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                      {isShopSession
+                        ? 'Your outlet fills automatically from your shop account once loaded.'
+                        : 'Scan the shop QR above to select this outlet.'}
+                    </p>
                   </div>
                 </div>
               )}
 
-              {/* Shop QR quick scan */}
-              <div className="mt-2 bg-slate-900 border border-slate-800 rounded-xl p-3">
+              {/* Shop QR quick scan — guests only; logged-in shops
+                  always record for their own (auto-filled) outlet. */}
+              {!isShopSession && (
+                <div className="mt-2 bg-slate-900 border border-slate-800 rounded-xl p-3">
                 {!isShopCameraActive ? (
                   <button
                     type="button"
@@ -1075,7 +1109,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                 {shopScanMsg && (
                   <p className="mt-2 text-[11px] font-semibold text-amber-300">{shopScanMsg}</p>
                 )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Total purchase amount input */}
