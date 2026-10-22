@@ -70,6 +70,15 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   } | null>(null);
   const scanPopupTimer = useRef<number | null>(null);
 
+  // Valid-banner texts are admin-editable branding (Customization table).
+  const brandOutcome = (outcome: { valid: boolean; message: string; detail: string }) => {
+    if (!outcome.valid) return outcome;
+    const title = customization?.valid_banner_title?.trim();
+    const detail = customization?.valid_banner_detail?.trim();
+    if (!title && !detail) return outcome;
+    return { ...outcome, message: title || outcome.message, detail: detail || outcome.detail };
+  };
+
   // Scanned shop state — a shop QR fills the discount form automatically,
   // so the operator never has to choose the shop from the dropdown.
   const [shopScanCode, setShopScanCode] = useState('');
@@ -122,16 +131,18 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       if (isShopSession) setShopScanStage('form');
       else setShowPartners(true);
       scrollToPartners();
+      // Unmount ~380ms after the CSS exit animation begins (animation-delay:
+      // var(--toast-life)) so the send-off is visible.
       scanPopupTimer.current = window.setTimeout(() => {
         setScanPopup(null);
         scanPopupTimer.current = null;
-      }, 1900);
+      }, 2280);
       return;
     }
     scanPopupTimer.current = window.setTimeout(() => {
       setScanPopup(null);
       scanPopupTimer.current = null;
-    }, 3600);
+    }, 3980);
   };
 
   const closeScanPopup = (proceed: boolean) => {
@@ -249,7 +260,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         });
         return;
       }
-      const outcome = getCardScanOutcome(customer);
+      const outcome = brandOutcome(getCardScanOutcome(customer));
       setCardOutcome(outcome);
       if (!outcome.valid) {
         setScannedCustomer(null);
@@ -439,7 +450,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
 
       if (customer) {
         // Card validity: "Card is valid" or "Renew subscription".
-        const outcome = getCardScanOutcome(customer);
+        const outcome = brandOutcome(getCardScanOutcome(customer));
         setCardOutcome(outcome);
         if (!outcome.valid) {
           setScanErrorState(outcome.detail);
@@ -630,18 +641,48 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
 
       {/* Scan verdict popup — Card is valid / Card is invalid / Renew subscription */}
       {scanPopup && (
+        <style>{`
+          @keyframes scanToastFade { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes scanToastIn {
+            0% { opacity: 0; transform: scale(.72) translateY(22px); }
+            62% { opacity: 1; transform: scale(1.045) translateY(0); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+          }
+          @keyframes scanToastOut {
+            0% { opacity: 1; transform: scale(1) translateY(0); }
+            100% { opacity: 0; transform: scale(.88) translateY(14px); }
+          }
+          @keyframes scanBadgePop {
+            0% { transform: scale(.3) rotate(-14deg); }
+            58% { transform: scale(1.22) rotate(4deg); }
+            100% { transform: scale(1) rotate(0deg); }
+          }
+          @keyframes scanBadgeHalo {
+            0% { box-shadow: 0 0 0 0 currentColor; opacity: .55; }
+            100% { box-shadow: 0 0 0 22px currentColor; opacity: 0; }
+          }
+          @keyframes scanBarDrain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+          .scan-toast-backdrop { animation: scanToastFade .18s ease-out both; }
+          .scan-toast-card { animation: scanToastIn .44s cubic-bezier(.2,.85,.3,1.18) both, scanToastOut .32s ease-in forwards; animation-delay: 0s, var(--toast-life); }
+          .scan-toast-badge { animation: scanBadgePop .52s cubic-bezier(.2,.85,.3,1.25) .06s both; }
+          .scan-toast-badge-anim { animation: scanBadgeHalo 1.15s ease-out .22s 1; }
+          .scan-toast-bar { transform-origin: left center; animation: scanBarDrain var(--toast-life) linear .12s both; }
+        `}</style>
+      )}
+      {scanPopup && (
         <div
-          className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          className="scan-toast-backdrop fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
           onClick={() => closeScanPopup(false)}
         >
           <div
-            className={`rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border-2 cursor-pointer ${
+            className={`scan-toast-card rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border-2 cursor-pointer ${
               scanPopup.kind === 'valid'
                 ? 'bg-white dark:bg-slate-900 border-emerald-500'
                 : scanPopup.kind === 'renew'
                   ? 'bg-white dark:bg-slate-900 border-amber-400'
                   : 'bg-white dark:bg-slate-900 border-red-500'
             }`}
+            style={{ ['--toast-life' as any]: `${scanPopup.kind === 'valid' ? 1.9 : 3.6}s` }}
             onClick={(e) => e.stopPropagation()}
           >
             <span
@@ -653,11 +694,15 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                     : 'bg-red-600 text-white'
               }`}
             >
-              {scanPopup.kind === 'valid' ? (
-                <CheckCircle2 className="w-7 h-7" />
-              ) : (
-                <AlertTriangle className="w-7 h-7" />
-              )}
+              <span className="scan-toast-badge flex">
+                <span className={`scan-toast-badge-anim rounded-2xl flex ${scanPopup.kind === 'valid' ? 'text-emerald-600' : scanPopup.kind === 'renew' ? 'text-amber-500' : 'text-red-600'}`}>
+                  {scanPopup.kind === 'valid' ? (
+                    <CheckCircle2 className="w-7 h-7" />
+                  ) : (
+                    <AlertTriangle className="w-7 h-7" />
+                  )}
+                </span>
+              </span>
             </span>
             <p
               className={`mt-3 text-base font-black uppercase tracking-wider ${
@@ -673,24 +718,22 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
             <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
               {scanPopup.detail}
             </p>
-            <button
-              type="button"
-              onClick={() => closeScanPopup(scanPopup.kind === 'valid')}
-              className={`mt-4 w-full py-2.5 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${
-                scanPopup.kind === 'valid'
-                  ? 'bg-emerald-600 hover:bg-emerald-700'
-                  : scanPopup.kind === 'renew'
-                    ? 'bg-amber-600 hover:bg-amber-700'
-                    : 'bg-red-600 hover:bg-red-700'
-              }`}
-            >
-              {scanPopup.kind === 'valid' ? 'Open discount form' : 'Scan again'}
-            </button>
-            <p className="text-[10px] font-semibold text-slate-400 mt-2 uppercase tracking-widest">
+            <p className="text-[10px] font-semibold text-slate-400 mt-3 uppercase tracking-widest">
               {scanPopup.kind === 'valid'
-                ? 'Continuing automatically…'
-                : 'This popup closes automatically…'}
+                ? 'Taking you forward…'
+                : 'Closing automatically…'}
             </p>
+            <div className="mt-2 h-1 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+              <div
+                className={`scan-toast-bar h-full rounded-full ${
+                  scanPopup.kind === 'valid'
+                    ? 'bg-emerald-500'
+                    : scanPopup.kind === 'renew'
+                      ? 'bg-amber-500'
+                      : 'bg-red-500'
+                }`}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -698,25 +741,6 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       {showPartners && scannedCustomer ? (
           <>
           <div id="member-partners-panel" className="space-y-6 scroll-mt-6">
-            {/* Verified member banner */}
-            <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
-              <span className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shrink-0">
-                {scannedCustomer.name.charAt(0).toUpperCase()}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Member card verified</p>
-                <p className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">{scannedCustomer.name}</p>
-                <p className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300">{scannedCustomer.qr_code}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); }}
-                className="shrink-0 px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer"
-              >
-                Scan another
-              </button>
-            </div>
-
             {/* Partner directory */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 md:p-6">
               <div className="flex items-center gap-3 mb-4">

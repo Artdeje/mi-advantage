@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, getCustomerCardBlockReason, buildShopUrl } from '../lib/supabase';
+import { db, getCustomerCardBlockReason, buildShopUrl, BUSINESS_TYPES, BUSINESS_TYPE_LABELS, DISCOUNT_SCOPES, DISCOUNT_SCOPE_LABELS } from '../lib/supabase';
 import { getSupabase } from '../lib/supabaseClient';
 import { readImageAsDataUrl } from '../lib/imageUtil';
 import { Shop, Sale, Customer, Product, Customization } from '../types';
@@ -39,6 +39,8 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
   const [accountDiscount, setAccountDiscount] = useState<number | ''>('');
   const [accountEmail, setAccountEmail] = useState('');
   const [accountDescription, setAccountDescription] = useState('');
+  const [accountBusinessType, setAccountBusinessType] = useState<'retail' | 'restaurant' | 'cafe' | 'hotel' | 'services' | 'other'>('retail');
+  const [accountDiscountScope, setAccountDiscountScope] = useState<'all' | 'drinks' | 'food' | 'rooms' | 'services'>('all');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -290,6 +292,14 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
         setAccountDiscount(currentShop.discount_percent);
         setAccountEmail(currentShop.email);
         setAccountDescription(currentShop.description || '');
+        const businessType: typeof BUSINESS_TYPES[number] = (BUSINESS_TYPES as readonly string[]).includes(currentShop.business_type)
+          ? (currentShop.business_type as typeof BUSINESS_TYPES[number])
+          : 'retail';
+        setAccountBusinessType(businessType);
+        const discountScope: typeof DISCOUNT_SCOPES[number] = (DISCOUNT_SCOPES as readonly string[]).includes(currentShop.discount_scope || 'all')
+          ? ((currentShop.discount_scope || 'all') as typeof DISCOUNT_SCOPES[number])
+          : 'all';
+        setAccountDiscountScope(discountScope);
       }
     }
 
@@ -800,6 +810,8 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
         discount_percent: Number(accountDiscount),
         email: accountEmail,
         description: accountDescription.trim(),
+        business_type: accountBusinessType,
+        discount_scope: accountDiscountScope,
       });
       if (error) {
         setAccountMsg(error);
@@ -1735,6 +1747,32 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
                     placeholder="Tell shoppers what your business offers..."
                     className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold resize-y"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">Shown in the partner details view customers see after tapping your outlet.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">Business Type</label>
+                  <select
+                    value={accountBusinessType}
+                    onChange={(e) => setAccountBusinessType(e.target.value as typeof BUSINESS_TYPES[number])}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold cursor-pointer"
+                  >
+                    {BUSINESS_TYPES.map((t) => (
+                      <option key={t} value={t}>{BUSINESS_TYPE_LABELS[t]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">Discount Scope</label>
+                  <select
+                    value={accountDiscountScope}
+                    onChange={(e) => setAccountDiscountScope(e.target.value as typeof DISCOUNT_SCOPES[number])}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold cursor-pointer"
+                  >
+                    {DISCOUNT_SCOPES.map((s) => (
+                      <option key={s} value={s}>{DISCOUNT_SCOPE_LABELS[s]}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">The discount rate itself is set by the administrator.</p>
                 </div>
                 <button
                   type="submit"

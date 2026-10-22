@@ -358,6 +358,8 @@ const DEFAULT_CUSTOMIZATION: Customization = {
   subtitle: '',
   scan_title: 'Member Scan & Loyalty Terminal',
   scan_subtitle: 'Scan customer membership cards in real-time to compute discounts and record transaction logs.',
+  valid_banner_title: 'Card is valid',
+  valid_banner_detail: 'This member card is active and can be used for a discount.',
   favicon_url: '',
   home_h1: '',
   home_h2: '',
@@ -1550,12 +1552,32 @@ export class SupabaseDatabaseService {
     const current = await this.getCustomization();
     const updated = { ...current, ...updates };
 
-    try {
-      await getSupabase()
+    // Posts may arrive before a live database has every customizer column
+    // (e.g. scan_* / valid_banner_* added by pending migrations). Retry while
+    // the server reports unknown columns, dropping them from the payload so
+    // the rest of the fields still persist.
+    let payload = { id: "global-config", ...updated };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { error } = await getSupabase()
         .from("customization")
-        .upsert([{ id: "global-config", ...updated }]);
-    } catch (e) {
-      console.warn("Supabase customization save failed:", e);
+        .upsert([payload]);
+      if (!error) break;
+      const msg = String(error?.message || "");
+      const missing = [...msg.matchAll(/"([a-z_]+)"/g)]
+        .map((m) => m[1])
+        .filter((col) => col !== "customization" && col in payload);
+      if (!missing.length) {
+        console.warn("Supabase customization save failed:", msg);
+        break;
+      }
+      console.warn(
+        `Supabase customization missing columns ${missing.join(", ")} — retrying without them.`,
+      );
+      const next: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(payload)) {
+        if (!missing.includes(k)) next[k] = v;
+      }
+      payload = next as typeof payload;
     }
 
     await this.addLog(

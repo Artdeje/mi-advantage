@@ -63,5 +63,10 @@ ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS scan_title TEXT DEFAUL
 ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS scan_subtitle TEXT DEFAULT 'Scan customer membership cards in real-time to compute discounts and record transaction logs.';
 
 -- =========================================================
+-- 7. CUSTOMIZATION: scan terminal valid-verdict banner texts (v10)
+ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS valid_banner_title TEXT DEFAULT 'Card is valid';
+ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS valid_banner_detail TEXT DEFAULT 'This member card is active and can be used for a discount.';
+
+-- =========================================================
 -- DONE. Now run: npm run db:init
 -- =========================================================

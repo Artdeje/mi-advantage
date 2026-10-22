@@ -598,7 +598,7 @@ const DEFAULT_SEED: Record<string, any[]> = {
     { id: "prod-6", shop_id: "shop-4", name: "Day Pass", price: 15000, stock: 30, description: "Full-day resort access with lunch.", status: "active" },
   ],
   customization: [
-    { id: "global-config", theme_color: "green", title: "Mi Advantage QR Card Scan & Shop", subtitle: "Member Privilege Program", scan_title: "Member Scan & Loyalty Terminal", scan_subtitle: "Scan customer membership cards in real-time to compute discounts and record transaction logs.", home_h1: "Instant Merchant Discounts", home_h2: "QR Member Advantage System", home_p: "Scan your digital member card at any registered partner outlet to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly." },
+    { id: "global-config", theme_color: "green", title: "Mi Advantage QR Card Scan & Shop", subtitle: "Member Privilege Program", scan_title: "Member Scan & Loyalty Terminal", scan_subtitle: "Scan customer membership cards in real-time to compute discounts and record transaction logs.", valid_banner_title: "Card is valid", valid_banner_detail: "This member card is active and can be used for a discount.", home_h1: "Instant Merchant Discounts", home_h2: "QR Member Advantage System", home_p: "Scan your digital member card at any registered partner outlet to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly." },
   ],
 };
 

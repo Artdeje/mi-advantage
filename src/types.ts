@@ -89,6 +89,9 @@ export interface Customization {
   // Scan terminal (CustomerPortal header)
   scan_title?: string;
   scan_subtitle?: string;
+  // Scan terminal valid-verdict banner + popup texts
+  valid_banner_title?: string;
+  valid_banner_detail?: string;
   favicon_url?: string;
   home_h1?: string;
   home_h2?: string;
