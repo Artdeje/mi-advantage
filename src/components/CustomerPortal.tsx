@@ -9,7 +9,7 @@ import {
   BUSINESS_TYPE_LABELS,
   DISCOUNT_SCOPE_LABELS,
 } from '../lib/supabase';
-import { Customer, Shop } from '../types';
+import { Customer, Shop, Customization } from '../types';
 import {
   QrCode,
   Camera,
@@ -30,9 +30,14 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const [selectedShopId, setSelectedShopId] = useState('');
   // Card branding (system logo follows the same monogram as the printed card)
   const [cardBrand, setCardBrand] = useState('MA');
+  // Scan terminal heading is admin-editable branding (Customization table)
+  const [customization, setCustomization] = useState<Customization | null>(null);
   useEffect(() => {
     db.getCustomization()
-      .then((c) => setCardBrand(deriveCardBrand(c?.title, c?.card_brand)))
+      .then((c) => {
+        setCardBrand(deriveCardBrand(c?.title, c?.card_brand));
+        setCustomization(c);
+      })
       .catch(() => setCardBrand('MA'));
   }, []);
   // A logged-in shop gets the full transaction terminal; everyone else (an
@@ -40,7 +45,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const isShopSession = db.currentUser?.role === 'shop';
   // External scanner result: show the partner directory instead of a form.
   const [showPartners, setShowPartners] = useState(false);
-  // Deep link ?shop=SHOP-1001 (from a scanned counter QR) pre-selects the shop.
+  // Deep link ?shop=SHOP-1234 (from a scanned counter QR) pre-selects the shop.
   const [pendingShopCode, setPendingShopCode] = useState('');
   // Deep link ?card=CUST-0001 (from an external QR scanner) authenticates the card.
   const [pendingCardCode, setPendingCardCode] = useState('');
@@ -94,7 +99,17 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     }, 120);
   };
 
-  // Verdict popup — valid cards continue to the discount form automatically.
+  const scrollToPartners = () => {
+    setTimeout(() => {
+      document
+        .getElementById('member-partners-panel')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+  };
+
+  // Verdict popup — valid cards navigate DIRECTLY to their destination
+  // (discount form for a logged-in shop, partner directory for a guest)
+  // while the toast briefly confirms the verdict on top.
   const showScanPopup = (
     kind: 'valid' | 'invalid' | 'renew',
     message: string,
@@ -102,11 +117,21 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   ) => {
     if (scanPopupTimer.current) window.clearTimeout(scanPopupTimer.current);
     setScanPopup({ kind, message, detail });
+    if (kind === 'valid') {
+      // Already route: no waiting gate between the verdict and the panel.
+      if (isShopSession) setShopScanStage('form');
+      else setShowPartners(true);
+      scrollToPartners();
+      scanPopupTimer.current = window.setTimeout(() => {
+        setScanPopup(null);
+        scanPopupTimer.current = null;
+      }, 1900);
+      return;
+    }
     scanPopupTimer.current = window.setTimeout(() => {
       setScanPopup(null);
-      if (kind === 'valid') setShopScanStage('form');
       scanPopupTimer.current = null;
-    }, kind === 'valid' ? 2000 : 3600);
+    }, 3600);
   };
 
   const closeScanPopup = (proceed: boolean) => {
@@ -161,7 +186,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   }, []);
 
   // Deep link: read ?shop=… / ?card=… once from the hash.
-  //  - ?shop=SHOP-1001  → pre-selects that counter (shop QR posted at a partner)
+  //  - ?shop=SHOP-1234  → pre-selects that counter (shop QR posted at a partner)
   //  - ?card=CUST-0001  → an external QR scanner link authenticates the card
   useEffect(() => {
     const readDeepLink = () => {
@@ -238,18 +263,9 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       setScanErrorState(null);
       setScannedCustomer(customer);
       setScanDone(true);
-      if (isShopSession) {
-        // Popup verdict first, then continue to the authenticated form.
-        showScanPopup('valid', outcome.message, outcome.detail);
-        scrollToDiscountForm();
-      } else {
-        setShowPartners(true);
-        setTimeout(() => {
-          document
-            .getElementById('member-partners-panel')
-            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 150);
-      }
+      // Verdict popup handles the navigation itself (direct auth).
+      showScanPopup('valid', outcome.message, outcome.detail);
+      if (isShopSession) scrollToDiscountForm();
     })();
     return () => {
       cancelled = true;
@@ -362,7 +378,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       } catch (err: any) {
         console.error('Shop QR camera start failure:', err);
         setShopScanMsg(
-          'Camera unavailable. Type the shop code manually below (e.g. SHOP-1001).'
+          'Camera unavailable. Type the shop code manually below (e.g. SHOP-1234).'
         );
         setIsShopCameraActive(false);
       }
@@ -393,7 +409,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         scrollToDiscountForm();
       } else {
         setShopScanMsg(
-          `Invalid shop code "${cleanCode}". Scan the QR posted at a partner counter (e.g. SHOP-1001).`
+          `Invalid shop code "${cleanCode}". Scan the QR posted at a partner counter (e.g. SHOP-1234).`
         );
       }
     } finally {
@@ -440,19 +456,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         setScannedCustomer(customer);
         setScanDone(true);
         await stopCameraScanner();
-        if (isShopSession) {
-          // Shop terminal: verdict popup, then the filled discount form.
-          showScanPopup('valid', outcome.message, outcome.detail);
-          scrollToDiscountForm();
-        } else {
-          // External scan (phone / other): show the member's partner directory.
-          setShowPartners(true);
-          setTimeout(() => {
-            document
-              .getElementById('member-partners-panel')
-              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 150);
-        }
+        // Verdict popup handles the navigation itself (direct auth): the
+        // terminal form (shop) or the partner directory (guest) mounts right
+        // away while the toast confirms the verdict.
+        showScanPopup('valid', outcome.message, outcome.detail);
+        if (isShopSession) scrollToDiscountForm();
       } else {
         setScanErrorState(null);
         setCardOutcome({
@@ -570,8 +578,12 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
           <QrCode className="w-6 h-6" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">Kigali Smart Scan & Loyalty Terminal</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Scan customer membership cards in real-time to compute discount rates and record transaction logs.</p>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">
+            {customization?.scan_title || 'Member Scan & Loyalty Terminal'}
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {customization?.scan_subtitle || 'Scan customer membership cards in real-time to compute discount rates and record transaction logs.'}
+          </p>
         </div>
       </div>
 
@@ -925,14 +937,14 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
               ⚡ Live Scan Simulator (Sandbox Mode)
             </span>
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              If camera access is blocked in this sandbox browser preview, simulate a card barcode scan by typing the member card code below (e.g. <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1 py-0.5 rounded">CUST-9821</span>):
+              If camera access is blocked in this sandbox browser preview, simulate a card barcode scan by typing the member card code below (e.g. <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1 py-0.5 rounded">CUST-####</span>):
             </p>
 
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 id="simulator-scan-code-input"
-                placeholder="Type member token e.g. CUST-9821"
+                placeholder="Type member token e.g. CUST-####"
                 className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -1095,7 +1107,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                         if (shopScanCode.trim()) handleShopQRScan(shopScanCode);
                       }
                     }}
-                    placeholder="or type shop code e.g. SHOP-1001"
+                    placeholder="or type shop code e.g. SHOP-1234"
                     className="flex-1 min-w-0 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <button

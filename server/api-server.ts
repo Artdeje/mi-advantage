@@ -103,7 +103,6 @@ const PUBLIC_PATHS = new Set([
   "/api/db/auth/request-reset",
   "/api/db/auth/reset-password",
   "/api/db/test",
-  "/api/db/seed",
   "/api/health",
   "/health",
 ]);
@@ -594,11 +593,17 @@ const DEFAULT_SEED: Record<string, any[]> = {
     { id: "prod-6", shop_id: "shop-4", name: "Day Pass", price: 15000, stock: 30, description: "Full-day resort access with lunch.", status: "active" },
   ],
   customization: [
-    { id: "global-config", theme_color: "green", title: "Mi Advantage QR Card Scan & Shop", subtitle: "Kigali Premium Privilege", home_h1: "Instant Merchant Discounts", home_h2: "QR Member Advantage System", home_p: "Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly." },
+    { id: "global-config", theme_color: "green", title: "Mi Advantage QR Card Scan & Shop", subtitle: "Member Privilege Program", scan_title: "Member Scan & Loyalty Terminal", scan_subtitle: "Scan customer membership cards in real-time to compute discounts and record transaction logs.", home_h1: "Instant Merchant Discounts", home_h2: "QR Member Advantage System", home_p: "Scan your digital member card at any registered partner outlet to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly." },
   ],
 };
 
-app.post("/api/db/seed", async (_req, res) => {
+app.post("/api/db/seed", async (req, res) => {
+  // Re-seeding is an administrator-only maintenance action: it overwrites
+  // global branding and demo rows, so it must never be public.
+  if (req.session?.role !== "admin") {
+    res.status(403).json({ error: "Administrator session required." });
+    return;
+  }
   try {
     const db = getDb();
     let upserted = 0;

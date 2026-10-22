@@ -58,5 +58,10 @@ VALUES ('admin-1', 'Super Administrator', 'artdeje@mail.com', 'admin123', 'super
 ON CONFLICT (email) DO UPDATE SET role = 'super_admin', status = 'active', email_verified = true;
 
 -- =========================================================
+-- 6. CUSTOMIZATION: scan terminal heading fields (v9)
+ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS scan_title TEXT DEFAULT 'Member Scan & Loyalty Terminal';
+ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS scan_subtitle TEXT DEFAULT 'Scan customer membership cards in real-time to compute discounts and record transaction logs.';
+
+-- =========================================================
 -- DONE. Now run: npm run db:init
 -- =========================================================

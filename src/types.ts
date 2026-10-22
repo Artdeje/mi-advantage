@@ -86,6 +86,9 @@ export interface Customization {
   card_wordmark?: string; // wordmark at the top of the card (e.g. "THE BEYOND")
   title: string;
   subtitle?: string;
+  // Scan terminal (CustomerPortal header)
+  scan_title?: string;
+  scan_subtitle?: string;
   favicon_url?: string;
   home_h1?: string;
   home_h2?: string;

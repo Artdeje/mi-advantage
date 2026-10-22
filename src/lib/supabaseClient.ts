@@ -34,6 +34,18 @@ class ApiClient {
     return new QueryBuilder(this.baseUrl, table, this.authHeaders.bind(this));
   }
 
+  // Generic server endpoint call (Bearer-protected) — used for non-table
+  // routes such as POST /api/db/seed.
+  async post(path: string, body?: unknown): Promise<{ ok: boolean; data: any }> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...this.authHeaders() },
+      body: JSON.stringify(body ?? {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data };
+  }
+
   // --- Auth endpoints (server-side session) ---
   async login(email: string, password: string) {
     const res = await fetch(`${this.baseUrl}/api/db/auth/login`, {

@@ -152,7 +152,7 @@ export default function ShopRegistrationPage({ onRegistered }: { onRegistered: (
           <form onSubmit={handleSubmit} className="space-y-4 text-left">
             <div>
               <label className={labelCls}>Business Name</label>
-              <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Kigali Coffee House" className={inputCls} />
+              <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Your Business Name" className={inputCls} />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

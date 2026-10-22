@@ -239,7 +239,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
 
           <div class="footer-notes">
             <div>
-              <p style="margin: 0; font-weight: bold;">Certified Kigali Loyalty Network</p>
+              <p style="margin: 0; font-weight: bold;">Certified ${(customization?.card_wordmark || customization?.title || 'Loyalty Network').trim()} Loyalty Network</p>
               <p style="margin: 5px 0 0 0;">Compute rate: ${shopDetails?.discount_percent || 0}% Authorized Member Discount</p>
             </div>
             <div style="text-align: right;">
@@ -1086,7 +1086,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
                     <input
                       type="text"
                       id="shop-simulator-scan-input"
-                      placeholder="e.g. CUST-9821"
+                      placeholder="e.g. CUST-####"
                       className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1229,7 +1229,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
                         <ShopCounterQr
                           shop={shopDetails}
                           qrValue={buildShopUrl(shopDetails)}
-                          systemTitle={customization?.title || 'BP Discount System'}
+                          systemTitle={customization?.title || 'Mi Advantage'}
                           className="w-40 max-w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 mx-auto [&>div]:w-full [&_svg]:w-full [&_svg]:h-auto"
                         />
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-2.5">

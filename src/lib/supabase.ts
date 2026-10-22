@@ -348,141 +348,42 @@ export function validateProductInput(input: ProductInput): string | null {
   return null;
 }
 
-const SEED_SHOPS: Shop[] = [
-  {
-    id: "shop-1",
-    shop_name: "Kigali Fashion House",
-    discount_percent: 12,
-    email: "kigalifashion@shop.com",
-    password: "shop123",
-    created_at: "2026-07-01T10:00:00Z",
-  },
-  {
-    id: "shop-2",
-    shop_name: "Simba Supermarket",
-    discount_percent: 8,
-    email: "simba@shop.com",
-    password: "shop123",
-    created_at: "2026-07-01T11:00:00Z",
-  },
-  {
-    id: "shop-3",
-    shop_name: "Inzora Rooftop Cafe",
-    discount_percent: 15,
-    email: "inzora@shop.com",
-    password: "shop123",
-    created_at: "2026-07-02T09:00:00Z",
-  },
-  {
-    id: "shop-4",
-    shop_name: "Gisenyi Beach Resort",
-    discount_percent: 20,
-    email: "gisenyiresort@shop.com",
-    password: "shop123",
-    created_at: "2026-07-03T14:00:00Z",
-  },
-];
-
-export const SEED_CUSTOMERS: Customer[] = [
-  {
-    id: "cust-1",
-    name: "Jean Luc Mutara",
-    email: "jeanluc@example.com",
-    phone: "+250788123456",
-    qr_code: "CUST-9821",
-    created_at: "2026-07-01T08:30:00Z",
-    valid_until: "2027-07-01",
-    customer_type: "student",
-    student_id: "STU-2023-0451",
-    university: "University of Rwanda",
-    card_status: "active",
-  },
-  {
-    id: "cust-2",
-    name: "Aline Uwase",
-    email: "aline@example.com",
-    phone: "+250788654321",
-    qr_code: "CUST-1123",
-    created_at: "2026-07-02T10:15:00Z",
-    valid_until: "2027-07-02",
-    customer_type: "other",
-    referee_number: "CUST-9821",
-    card_status: "active",
-  },
-  {
-    id: "cust-3",
-    name: "Eric Ndahiro",
-    email: "ericn@example.com",
-    phone: "+250789555666",
-    qr_code: "CUST-4567",
-    created_at: "2026-07-03T11:45:00Z",
-    valid_until: "2027-07-03",
-    referee_number: "CUST-9821",
-    card_status: "active",
-  },
-  {
-    id: "cust-4",
-    name: "Marie Claire Uwineza",
-    email: "claire@example.com",
-    phone: "+250782111222",
-    qr_code: "CUST-3049",
-    created_at: "2026-07-04T15:20:00Z",
-    valid_until: "2027-07-04",
-    customer_type: "student",
-    student_id: "STU-2024-1187",
-    university: "Kigali Independent University",
-    referee_number: "CUST-1123",
-    card_status: "active",
-  },
-  {
-    id: "cust-5",
-    name: "Divine Karemera",
-    email: "divine@example.com",
-    phone: "+250783999888",
-    qr_code: "CUST-8072",
-    created_at: "2026-07-05T16:10:00Z",
-    valid_until: "2027-07-05",
-    referee_number: "CUST-1123",
-    card_status: "active",
-  },
-];
-
-const SEED_CUSTOMIZATION: Customization = {
-  theme_color: "green",
-  logo_url: "",
-  card_brand: "BP",
-  card_logo_url: "",
-  card_wordmark: "THE BEYOND",
-  title: "Mi Advantage QR Card Scan & Shop",
-  subtitle: "Kigali Premium Privilege",
-  favicon_url: "",
-  home_h1: "Instant Merchant Discounts",
-  home_h2: "QR Member Advantage System",
-  home_p:
-    "Scan your digital member card at any registered partner outlet in Kigali to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly.",
-  login_heading: "Sign In",
-  login_subtext: "Access your Mi Advantage dashboard",
-  signup_heading: "Create Admin Account",
-  signup_subtext: "Register a new administrator account",
-  primary_color: "#059669",
-  secondary_color: "#0d9488",
-  accent_color: "#f59e0b",
-  background_color: "#f8fafc",
-  font_family: "Inter",
-  heading_font: "Space Grotesk",
-  login_background_type: "gradient",
-  login_background_value: "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)",
-  home_background_type: "image",
-  home_background_value: "",
-  feature1_title: "Partner Outlets",
-  feature1_desc: "Approved merchants across Kigali offer exclusive member discounts.",
-  feature2_title: "Instant Savings",
-  feature2_desc: "Discounts are computed in real-time at the checkout terminal.",
-  feature3_title: "Member Cards",
-  feature3_desc: "Every member gets unique QR credentials.",
-  custom_css: "",
+const DEFAULT_CUSTOMIZATION: Customization = {
+  theme_color: 'green',
+  logo_url: '',
+  card_brand: '',
+  card_logo_url: '',
+  card_wordmark: '',
+  title: 'Mi Advantage',
+  subtitle: '',
+  scan_title: 'Member Scan & Loyalty Terminal',
+  scan_subtitle: 'Scan customer membership cards in real-time to compute discounts and record transaction logs.',
+  favicon_url: '',
+  home_h1: '',
+  home_h2: '',
+  home_p: '',
+  login_heading: 'Sign In',
+  login_subtext: '',
+  signup_heading: 'Create Admin Account',
+  signup_subtext: '',
+  primary_color: '#059669',
+  secondary_color: '#0d9488',
+  accent_color: '#f59e0b',
+  background_color: '#f8fafc',
+  font_family: 'Inter',
+  heading_font: 'Space Grotesk',
+  login_background_type: 'gradient',
+  login_background_value: 'linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)',
+  home_background_type: 'image',
+  home_background_value: '',
+  feature1_title: 'Partner Outlets',
+  feature1_desc: 'Verified merchants offer exclusive member discounts.',
+  feature2_title: 'Instant Savings',
+  feature2_desc: 'Discounts are computed in real-time at the checkout terminal.',
+  feature3_title: 'Member Cards',
+  feature3_desc: 'Every member gets unique QR credentials.',
+  custom_css: '',
 };
-
 export class SupabaseDatabaseService {
   updateConfig(url: string, key: string) {
     return updateSupabaseClient(url, key);
@@ -1640,7 +1541,7 @@ export class SupabaseDatabaseService {
     } catch (e) {
       console.warn("Supabase customization query failed:", e);
     }
-    return SEED_CUSTOMIZATION;
+    return DEFAULT_CUSTOMIZATION;
   }
 
   async updateCustomization(
@@ -1907,43 +1808,20 @@ export class SupabaseDatabaseService {
     }
   }
 
+  // Bootstrap demo rows live server-side (server/api-server.ts) and are
+  // optional: seeding is an administrator-only maintenance endpoint.
   async seedDatabase(): Promise<{ success: boolean; error: string | null }> {
     try {
-      await getSupabase()
-        .from("customization")
-        .upsert([{ id: "global-config", ...SEED_CUSTOMIZATION }]);
-
-      await getSupabase().from("admins").upsert(
-        [
-          {
-            id: "admin-1",
-            name: "Super Administrator",
-            email: "artdeje@mail.com",
-            password: "admin123",
-            role: "super_admin",
-            status: "active",
-            email_verified: true,
-          },
-        ],
-        { onConflict: "email" },
-      );
-
-      await getSupabase()
-        .from("shops")
-        .upsert(
-          SEED_SHOPS.map((s) => ({ ...s, status: "approved", email_verified: true })),
-          { onConflict: "id" },
-        );
-
-      await getSupabase()
-        .from("customers")
-        .upsert(SEED_CUSTOMERS, { onConflict: "id" });
-
+      const { ok, data } = await getSupabase().post("/api/db/seed");
+      if (!ok) {
+        const message = (data && data.error) || "Seeding failed (administrator session required).";
+        return { success: false, error: message };
+      }
       await this.addLog(
         "Database Seeded",
         "System",
-        "system",
-        "Successfully seeded all Supabase tables with default Rwanda mock datasets.",
+        this.currentUser?.email || "system",
+        `Server seed completed: ${(data && data.message) || "done"}.`,
       );
       return { success: true, error: null };
     } catch (err: any) {

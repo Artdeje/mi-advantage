@@ -193,6 +193,9 @@ export default function AdminDashboard({
   // Customization inputs
   const [titleInput, setTitleInput] = useState("");
   const [subtitleInput, setSubtitleInput] = useState("");
+  // Scan terminal heading fields
+  const [scanTitleInput, setScanTitleInput] = useState("");
+  const [scanSubtitleInput, setScanSubtitleInput] = useState("");
   const [themeInput, setThemeInput] = useState<
     "green" | "teal" | "emerald" | "dark-green" | "blue"
   >("green");
@@ -286,6 +289,8 @@ export default function AdminDashboard({
       // Seed form customizations
       setTitleInput(currentCust.title || "");
       setSubtitleInput(currentCust.subtitle || "");
+      setScanTitleInput(currentCust.scan_title || "");
+      setScanSubtitleInput(currentCust.scan_subtitle || "");
       setThemeInput(currentCust.theme_color || "green");
       setLogoInput(currentCust.logo_url || "");
       setFaviconInput(currentCust.favicon_url || "");
@@ -689,6 +694,11 @@ export default function AdminDashboard({
   const saveBrandingHomepage = async (e: React.FormEvent) => {
     e.preventDefault();
     await saveBrandingField({ home_h1: h1Input, home_h2: h2Input, home_p: pInput }, "Homepage content");
+  };
+
+  const saveBrandingScanTerminal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveBrandingField({ scan_title: scanTitleInput, scan_subtitle: scanSubtitleInput }, "Scan terminal content");
   };
 
   const saveBrandingFeatures = async (e: React.FormEvent) => {
@@ -2048,8 +2058,7 @@ export default function AdminDashboard({
                 </div>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                View and moderate all active partner outlets registered inside
-                Kigali.
+                View and moderate all registered partner outlets in the network.
               </p>
               {shopListMsg && (
                 <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/50 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900 mb-4">
@@ -2387,7 +2396,7 @@ export default function AdminDashboard({
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. CUST-9821 (referrer's card code)"
+                    placeholder="Referrer's card code e.g. CUST-####"
                     value={custReferee}
                     onChange={(e) => setCustReferee(e.target.value)}
                     className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-semibold"
@@ -3122,7 +3131,7 @@ export default function AdminDashboard({
                 </div>
                 <div className="lg:col-span-1">
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Platform Subtitle</label>
-                  <input type="text" value={subtitleInput} onChange={(e) => setSubtitleInput(e.target.value)} placeholder="e.g. Kigali Premium Privilege" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  <input type="text" value={subtitleInput} onChange={(e) => setSubtitleInput(e.target.value)} placeholder="e.g. Member Privilege Program" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   <p className="text-[10px] text-slate-400 mt-1">Line under the title in the nav bar and on member cards.</p>
                 </div>
                 <div className="lg:col-span-1">
@@ -3247,7 +3256,7 @@ export default function AdminDashboard({
                       type="text"
                       value={cardWordmarkInput}
                       onChange={(e) => setCardWordmarkInput(e.target.value)}
-                      placeholder="THE BEYOND"
+                      placeholder="MY BRAND"
                       className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                     <p className="text-[10px] text-slate-400 mt-1">
@@ -3337,6 +3346,30 @@ export default function AdminDashboard({
                       className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
                     >
                       Save Homepage Content
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ROW 2A: Scan Terminal heading (CustomerPortal header) */}
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Scan Terminal Content</h4>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Terminal Heading</label>
+                    <input type="text" value={scanTitleInput} onChange={(e) => setScanTitleInput(e.target.value)} placeholder="e.g. Member Scan & Loyalty Terminal" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Terminal Subtitle</label>
+                    <input type="text" value={scanSubtitleInput} onChange={(e) => setScanSubtitleInput(e.target.value)} placeholder="e.g. Scan customer membership cards in real-time" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <button
+                      type="button"
+                      onClick={saveBrandingScanTerminal}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      Save Scan Terminal Content
                     </button>
                   </div>
                 </div>
@@ -3476,7 +3509,7 @@ export default function AdminDashboard({
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Footer Subtext</label>
-                    <input type="text" value={footerSubtext} onChange={(e) => setFooterSubtext(e.target.value)} placeholder="Encrypted Connection • Kigali, Rwanda" className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <input type="text" value={footerSubtext} onChange={(e) => setFooterSubtext(e.target.value)} placeholder="Secure Connection • Your City" className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                   <div className="lg:col-span-2">
                     <button
@@ -3977,7 +4010,7 @@ export default function AdminDashboard({
               <ShopCounterQr
                 shop={qrModalShop}
                 qrValue={buildShopUrl(qrModalShop)}
-                systemTitle={customization?.title || "BP Discount System"}
+                systemTitle={customization?.title || "Mi Advantage"}
                 className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 mx-auto [&_svg]:w-full [&_svg]:h-auto"
               />
               <div className="font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900 rounded-xl px-3 py-2 text-sm tracking-widest">
@@ -3993,14 +4026,14 @@ export default function AdminDashboard({
               />
               <div className="flex gap-2">
                 <button
-                  onClick={() => downloadShopQrSvg(qrModalShop, buildShopUrl(qrModalShop), customization?.title || "BP Discount System")}
+                  onClick={() => downloadShopQrSvg(qrModalShop, buildShopUrl(qrModalShop), customization?.title || "Mi Advantage")}
                   className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Download className="w-4 h-4" />
                   <span>Standee SVG</span>
                 </button>
                 <button
-                  onClick={() => printShopQrSvg(qrModalShop, buildShopUrl(qrModalShop), customization?.title || "BP Discount System")}
+                  onClick={() => printShopQrSvg(qrModalShop, buildShopUrl(qrModalShop), customization?.title || "Mi Advantage")}
                   className="flex-1 py-2.5 bg-slate-800 dark:bg-slate-100 hover:bg-slate-700 dark:hover:bg-white text-white dark:text-slate-900 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Printer className="w-4 h-4" />
