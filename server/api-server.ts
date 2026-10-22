@@ -64,7 +64,7 @@ interface Session {
 }
 
 const sessions = new Map<string, Session>();
-const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_TTL = 24 * 60 * 60 * 1000; // 24h IDLE timeout (sliding)
 
 function createSession(user: Omit<Session, "token" | "createdAt">): Session {
   const token = crypto.randomBytes(32).toString("hex");
@@ -76,7 +76,12 @@ function createSession(user: Omit<Session, "token" | "createdAt">): Session {
 function getSession(token: string): Session | null {
   const s = sessions.get(token);
   if (!s) return null;
-  if (Date.now() - s.createdAt > SESSION_TTL) { sessions.delete(token); return null; }
+  const now = Date.now();
+  if (now - s.createdAt > SESSION_TTL) { sessions.delete(token); return null; }
+  // Sliding expiry: every authenticated request resets the idle timer, so a
+  // session in active use never dies mid-work (dashboards 401'd whole sets of
+  // data while the public shops list kept working).
+  s.createdAt = now;
   return s;
 }
 

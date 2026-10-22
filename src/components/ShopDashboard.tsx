@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, getCustomerCardBlockReason, buildShopUrl } from '../lib/supabase';
+import { getSupabase } from '../lib/supabaseClient';
 import { readImageAsDataUrl } from '../lib/imageUtil';
 import { Shop, Sale, Customer, Product, Customization } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -262,31 +263,53 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
   };
 
   // Load shop data — one parallel round-trip instead of three sequential ones.
+  // Datasets load INDEPENDENTLY (like the public partners list): a failed /
+  // unauthorized call can no longer blank the whole dashboard.
   const loadData = async () => {
     setLoading(true);
-    db.getCustomization().then(setCustomization).catch(() => setCustomization(null));
-    const [shopsList, allSales, shopProducts] = await Promise.all([
-      db.getShops(),
-      db.getSales(),
-      db.getProducts(shopUser.id),
+    const [reports, stillValid] = await Promise.all([
+      Promise.allSettled([
+        db.getShops(),
+        db.getSales(),
+        db.getProducts(shopUser.id),
+        db.getCustomization(),
+      ]),
+      getSupabase().validateSession(),
     ]);
-    const currentShop = shopsList.find(s => s.id === shopUser.id);
-    if (currentShop) {
-      setShopDetails(currentShop);
-      if (currentShop.profile_picture) {
-        setProfilePic(currentShop.profile_picture);
+    const [shopsR, salesR, productsR, custR] = reports;
+    if (custR.status === 'fulfilled') setCustomization(custR.value); else setCustomization(null);
+
+    if (shopsR.status === 'fulfilled') {
+      const currentShop = shopsR.value.find(s => s.id === shopUser.id);
+      if (currentShop) {
+        setShopDetails(currentShop);
+        if (currentShop.profile_picture) {
+          setProfilePic(currentShop.profile_picture);
+        }
+        setAccountShopName(currentShop.shop_name);
+        setAccountDiscount(currentShop.discount_percent);
+        setAccountEmail(currentShop.email);
+        setAccountDescription(currentShop.description || '');
       }
-      setAccountShopName(currentShop.shop_name);
-      setAccountDiscount(currentShop.discount_percent);
-      setAccountEmail(currentShop.email);
-      setAccountDescription(currentShop.description || '');
     }
 
-    const shopSales = allSales.filter(sale => sale.shop_id === shopUser.id);
-    shopSales.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    setSales(shopSales);
+    if (salesR.status === 'fulfilled') {
+      const shopSales = salesR.value.filter(sale => sale.shop_id === shopUser.id);
+      shopSales.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setSales(shopSales);
+    }
 
-    setProducts(shopProducts);
+    if (productsR.status === 'fulfilled') {
+      setProducts(productsR.value);
+    }
+
+    // If the server session died (expiry / restart), the authenticated
+    // panels would stay silently empty — recover by returning to login.
+    if (!stillValid) {
+      db.currentUser = null;
+      onLogout?.();
+      return;
+    }
     setLoading(false);
   };
 

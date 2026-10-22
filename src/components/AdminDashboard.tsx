@@ -10,6 +10,7 @@ import {
   DISCOUNT_SCOPES,
   DISCOUNT_SCOPE_LABELS,
 } from "../lib/supabase";
+import { getSupabase } from "../lib/supabaseClient";
 import { Shop, Customer, Sale, AuditLog, Customization, Admin } from "../types";
 import {
   Plus,
@@ -264,76 +265,90 @@ export default function AdminDashboard({
 
   // Load all admin data — one parallel round-trip instead of six sequential
   // ones (each server hop costs ~0.5s, so sequential awaits stacked ~3s).
+  // Datasets load INDEPENDENTLY (like the public partners list): a failed /
+  // unauthorized call can no longer blank the whole dashboard.
   const loadData = async () => {
-    try {
-      const [listShops, listCustomers, listSales, listLogs, currentCust, listAdmins] =
-        await Promise.all([
-          db.getShops(),
-          db.getCustomers(),
-          db.getSales(),
-          db.getAuditLogs(),
-          db.getCustomization(),
-          db.getAdmins(),
-        ]);
+    const [settled, stillValid] = await Promise.all([
+      Promise.allSettled([
+        db.getShops(),
+        db.getCustomers(),
+        db.getSales(),
+        db.getAuditLogs(),
+        db.getCustomization(),
+        db.getAdmins(),
+      ]),
+      getSupabase().validateSession(),
+    ]);
 
-      setShops(listShops);
-      setCustomers(listCustomers);
-      setSales(listSales);
-      setLogs(listLogs);
-      setCustomization(currentCust);
-      setAdminsList(listAdmins);
+    const val = <T,>(r: PromiseSettledResult<T[]>, fallback: T[]) =>
+      r.status === "fulfilled" && r.value ? r.value : fallback;
+    const custList = settled[4].status === "fulfilled" && settled[4].value
+      ? settled[4].value
+      : null;
 
-      const authUser = db.currentUser;
-      setCurrentAdminRole((authUser?.admin_role as 'super_admin' | 'admin' | 'manager') || 'admin');
+    setShops(val(settled[0], []));
+    setCustomers(val(settled[1], []));
+    setSales(val(settled[2], []));
+    setLogs(val(settled[3], []));
+    setAdminsList(val(settled[5], []));
 
-      // Seed form customizations
-      setTitleInput(currentCust.title || "");
-      setSubtitleInput(currentCust.subtitle || "");
-      setScanTitleInput(currentCust.scan_title || "");
-      setScanSubtitleInput(currentCust.scan_subtitle || "");
-      setThemeInput(currentCust.theme_color || "green");
-      setLogoInput(currentCust.logo_url || "");
-      setFaviconInput(currentCust.favicon_url || "");
-      setCardBrandInput(currentCust.card_brand || "");
-      setCardWordmarkInput(currentCust.card_wordmark || "");
-      setCardLogoInput(currentCust.card_logo_url || "");
-      setH1Input(currentCust.home_h1 || "");
-      setH2Input(currentCust.home_h2 || "");
-      setPInput(currentCust.home_p || "");
-      setLoginHeading(currentCust.login_heading || "");
-      setLoginSubtext(currentCust.login_subtext || "");
-      setSignupHeading(currentCust.signup_heading || "");
-      setSignupSubtext(currentCust.signup_subtext || "");
+    const currentCust = custList ?? ({} as Customization);
+    setCustomization(custList);
 
-      // Seed footer values
-      setFooterText(currentCust.footer_text || "");
-      setFooterSubtext(currentCust.footer_subtext || "");
+    const authUser = db.currentUser;
+    setCurrentAdminRole((authUser?.admin_role as 'super_admin' | 'admin' | 'manager') || 'admin');
 
-      // Seed feature strip values
-      setF1Title(currentCust.feature1_title || "");
-      setF1Desc(currentCust.feature1_desc || "");
-      setF2Title(currentCust.feature2_title || "");
-      setF2Desc(currentCust.feature2_desc || "");
-      setF3Title(currentCust.feature3_title || "");
-      setF3Desc(currentCust.feature3_desc || "");
+    // Seed form customizations
+    setTitleInput(currentCust.title || "");
+    setSubtitleInput(currentCust.subtitle || "");
+    setScanTitleInput(currentCust.scan_title || "");
+    setScanSubtitleInput(currentCust.scan_subtitle || "");
+    setThemeInput(currentCust.theme_color || "green");
+    setLogoInput(currentCust.logo_url || "");
+    setFaviconInput(currentCust.favicon_url || "");
+    setCardBrandInput(currentCust.card_brand || "");
+    setCardWordmarkInput(currentCust.card_wordmark || "");
+    setCardLogoInput(currentCust.card_logo_url || "");
+    setH1Input(currentCust.home_h1 || "");
+    setH2Input(currentCust.home_h2 || "");
+    setPInput(currentCust.home_p || "");
+    setLoginHeading(currentCust.login_heading || "");
+    setLoginSubtext(currentCust.login_subtext || "");
+    setSignupHeading(currentCust.signup_heading || "");
+    setSignupSubtext(currentCust.signup_subtext || "");
 
-      // Seed landing page background
-      setHomeBgType(currentCust.home_background_type || "none");
-      setHomeBgValue(currentCust.home_background_value || "");
+    // Seed footer values
+    setFooterText(currentCust.footer_text || "");
+    setFooterSubtext(currentCust.footer_subtext || "");
 
-      // Seed full branding values
-      setPrimaryColor(currentCust.primary_color || "#059669");
-      setSecondaryColor(currentCust.secondary_color || "#0d9488");
-      setAccentColor(currentCust.accent_color || "#f59e0b");
-      setBgColor(currentCust.background_color || "#f8fafc");
-      setFontFamily(currentCust.font_family || "Inter");
-      setHeadingFont(currentCust.heading_font || "Space Grotesk");
-      setLoginBgType(currentCust.login_background_type || "gradient");
-      setLoginBgValue(currentCust.login_background_value || "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)");
-      setCustomCss(currentCust.custom_css || "");
+    // Seed feature strip values
+    setF1Title(currentCust.feature1_title || "");
+    setF1Desc(currentCust.feature1_desc || "");
+    setF2Title(currentCust.feature2_title || "");
+    setF2Desc(currentCust.feature2_desc || "");
+    setF3Title(currentCust.feature3_title || "");
+    setF3Desc(currentCust.feature3_desc || "");
 
-    } catch (err) {
-      console.error("AdminDashboard loadData failed:", err);
+    // Seed landing page background
+    setHomeBgType(currentCust.home_background_type || "none");
+    setHomeBgValue(currentCust.home_background_value || "");
+
+    // Seed full branding values
+    setPrimaryColor(currentCust.primary_color || "#059669");
+    setSecondaryColor(currentCust.secondary_color || "#0d9488");
+    setAccentColor(currentCust.accent_color || "#f59e0b");
+    setBgColor(currentCust.background_color || "#f8fafc");
+    setFontFamily(currentCust.font_family || "Inter");
+    setHeadingFont(currentCust.heading_font || "Space Grotesk");
+    setLoginBgType(currentCust.login_background_type || "gradient");
+    setLoginBgValue(currentCust.login_background_value || "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)");
+    setCustomCss(currentCust.custom_css || "");
+
+    // If the server session died (expiry / restart), the authenticated
+    // panels would stay silently empty — recover by returning to login.
+    if (!stillValid) {
+      db.currentUser = null;
+      onLogout?.();
     }
   };
 

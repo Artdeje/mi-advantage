@@ -83,6 +83,8 @@ class ApiClient {
 
   // Validate the stored token against the lightweight auth endpoint (no DB
   // round-trips — the heavy /api/db/test table sweep took seconds per call).
+  // Network failure returns TRUE (offline resilience): an unreachable server
+  // is not proof of an expired session.
   async validateSession(): Promise<boolean> {
     const token = this.getToken();
     if (!token) return false;
@@ -93,7 +95,7 @@ class ApiClient {
       // If the server returns 401, the session is invalid
       return res.status < 300;
     } catch {
-      return false;
+      return true;
     }
   }
 
