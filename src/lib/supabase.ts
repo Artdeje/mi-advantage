@@ -1476,7 +1476,8 @@ export class SupabaseDatabaseService {
         .maybeSingle();
       if (!exactError && exact) {
         const customer = await this.reconcileCustomerStatus(exact as Customer);
-        await this.addLog(
+        // Audit logging must not delay the scan — it is informational.
+        void this.addLog(
           "QR Code Scanned",
           "System",
           "scanner",
@@ -1497,7 +1498,7 @@ export class SupabaseDatabaseService {
         );
         if (match) {
           const customer = await this.reconcileCustomerStatus(match);
-          await this.addLog(
+          void this.addLog(
             "QR Code Scanned",
             "System",
             "scanner",
@@ -1516,14 +1517,49 @@ export class SupabaseDatabaseService {
     return fetchAllPaged<Sale>("sales", "created_at", false);
   }
 
+  // Single-row shop fetch — full list sweeps are too slow for the terminal.
+  async getShopById(id: string): Promise<Shop | null> {
+    if (!id) return null;
+    try {
+      const { data, error } = await getSupabase()
+        .from("shops")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+      if (error || !data) return null;
+      return data as Shop;
+    } catch {
+      return null;
+    }
+  }
+
+  // Name resolution without pulling the entire customer table.
+  async findCustomerByName(name: string): Promise<Customer | null> {
+    if (!name || !name.trim()) return null;
+    try {
+      const { data, error } = await getSupabase()
+        .from("customers")
+        .select("*")
+        .ilike("name", name.trim())
+        .limit(1);
+      if (error || !data) return null;
+      return (data[0] as Customer) || null;
+    } catch {
+      return null;
+    }
+  }
+
   async createSale(
     shopId: string,
     customerName: string,
     amountBefore: number,
     customerId?: string,
   ): Promise<{ sale: Sale | null; error: string | null }> {
-    const shopList = await this.getShops();
-    const shop = shopList.find((s) => s.id === shopId);
+    // Stamp the sale at the moment the operator confirms it — lookups must not
+    // shift the recorded timestamp.
+    const createdAt = new Date().toISOString();
+
+    const shop = await this.getShopById(shopId);
     if (!shop) {
       return { sale: null, error: "Registered shop not found." };
     }
@@ -1533,14 +1569,9 @@ export class SupabaseDatabaseService {
     const finalAmount = amountBefore - discountApplied;
 
     let finalCustomerId = customerId;
-    if (!finalCustomerId) {
-      const custs = await this.getCustomers();
-      const match = custs.find(
-        (c) => c.name.toLowerCase() === customerName.toLowerCase(),
-      );
-      if (match) {
-        finalCustomerId = match.id;
-      }
+    if (!finalCustomerId && customerName) {
+      const match = await this.findCustomerByName(customerName);
+      if (match) finalCustomerId = match.id;
     }
 
     const newSale: Sale = {
@@ -1553,7 +1584,7 @@ export class SupabaseDatabaseService {
       discount_percent: discountPercent,
       discount_applied: discountApplied,
       final_amount: finalAmount,
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
     };
 
     try {
@@ -1563,7 +1594,8 @@ export class SupabaseDatabaseService {
       return { sale: null, error: e?.message || "Insert failed" };
     }
 
-    await this.addLog(
+    // Audit logging must not block the terminal's confirmation flow.
+    void this.addLog(
       "Transaction Recorded",
       "Shop",
       shop.email,

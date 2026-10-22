@@ -54,6 +54,16 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const [scanErrorState, setScanErrorState] = useState<string | null>(null);
   // Card validation outcome shown to the user: "Card is valid" / "Renew subscription"
   const [cardOutcome, setCardOutcome] = useState<{ valid: boolean; message: string; detail: string } | null>(null);
+  // Shop-terminal flow: the member-QR scanner card owns the page until a card
+  // authenticates, then the popup hands over to the discount form.
+  const [shopScanStage, setShopScanStage] = useState<'scan' | 'form'>('scan');
+  // Transient verdict popup: "Card is valid" / "Card is invalid" / "Renew subscription".
+  const [scanPopup, setScanPopup] = useState<{
+    kind: 'valid' | 'invalid' | 'renew';
+    message: string;
+    detail: string;
+  } | null>(null);
+  const scanPopupTimer = useRef<number | null>(null);
 
   // Scanned shop state — a shop QR fills the discount form automatically,
   // so the operator never has to choose the shop from the dropdown.
@@ -82,6 +92,40 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     setTimeout(() => {
       discountFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 120);
+  };
+
+  // Verdict popup — valid cards continue to the discount form automatically.
+  const showScanPopup = (
+    kind: 'valid' | 'invalid' | 'renew',
+    message: string,
+    detail: string,
+  ) => {
+    if (scanPopupTimer.current) window.clearTimeout(scanPopupTimer.current);
+    setScanPopup({ kind, message, detail });
+    scanPopupTimer.current = window.setTimeout(() => {
+      setScanPopup(null);
+      if (kind === 'valid') setShopScanStage('form');
+      scanPopupTimer.current = null;
+    }, kind === 'valid' ? 2000 : 3600);
+  };
+
+  const closeScanPopup = (proceed: boolean) => {
+    if (scanPopupTimer.current) {
+      window.clearTimeout(scanPopupTimer.current);
+      scanPopupTimer.current = null;
+    }
+    setScanPopup(null);
+    if (proceed && isShopSession) setShopScanStage('form');
+  };
+
+  const backToScanStage = () => {
+    setScanPopup(null);
+    setShopScanStage('scan');
+    setScannedCustomer(null);
+    setScanDone(false);
+    setAmountBefore('');
+    setCardOutcome(null);
+    setScanErrorState(null);
   };
 
   // Load registered shops from database.
@@ -161,12 +205,18 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       if (!outcome.valid) {
         setScannedCustomer(null);
         setScanDone(false);
+        if (isShopSession) {
+          const renew = outcome.message.toLowerCase().includes('renew');
+          showScanPopup(renew ? 'renew' : 'invalid', outcome.message, outcome.detail);
+        }
         return;
       }
       setScanErrorState(null);
       setScannedCustomer(customer);
       setScanDone(true);
       if (isShopSession) {
+        // Popup verdict first, then continue to the authenticated form.
+        showScanPopup('valid', outcome.message, outcome.detail);
         scrollToDiscountForm();
       } else {
         setShowPartners(true);
@@ -355,6 +405,10 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
           setScanErrorState(outcome.detail);
           setScannedCustomer(null);
           setScanDone(false);
+          if (isShopSession) {
+            const renew = outcome.message.toLowerCase().includes('renew');
+            showScanPopup(renew ? 'renew' : 'invalid', outcome.message, outcome.detail);
+          }
           return;
         }
 
@@ -363,7 +417,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         setScanDone(true);
         await stopCameraScanner();
         if (isShopSession) {
-          // Shop terminal: jump to the discount form (customer ID auto-filled).
+          // Shop terminal: verdict popup, then the filled discount form.
+          showScanPopup('valid', outcome.message, outcome.detail);
           scrollToDiscountForm();
         } else {
           // External scan (phone / other): show the member's partner directory.
@@ -378,10 +433,19 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         setScanErrorState(null);
         setCardOutcome({
           valid: false,
-          message: 'Card not found',
+          message: 'Card is invalid',
           detail: `No member card matches "${cleanCode}". Please scan a valid registered card.`,
         });
-        alert(`Invalid Card scanned: "${cleanCode}". Please scan a valid registered customer card.`);
+        if (isShopSession) {
+          // Verdict popup instead of a browser alert on the shop terminal.
+          showScanPopup(
+            'invalid',
+            'Card is invalid',
+            `No member card matches "${cleanCode}". Scan or type a registered member card and try again.`,
+          );
+        } else {
+          alert(`Invalid Card scanned: "${cleanCode}". Please scan a valid registered customer card.`);
+        }
       }
     } finally {
       scanLockRef.current = false;
@@ -435,16 +499,17 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         alert(error);
       } else if (sale) {
         setTxSuccess(`Transaction recorded successfully! Simulated discount applied for ${scannedCustomer.name}.`);
-        
+
         // Reset scanner variables
         setScannedCustomer(null);
         setScanDone(false);
         setAmountBefore('');
         setScanErrorState(null);
-        
-        // Load database again to capture updated metrics
-        await loadDatabaseData();
+
         if (onNewSale) onNewSale();
+        // Back to the scanner card for the next member — a full data reload
+        // here would slow the terminal without any UI needing it.
+        if (isShopSession) setShopScanStage('scan');
 
         setTimeout(() => setTxSuccess(''), 5000);
       }
@@ -522,6 +587,73 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
             </p>
             <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
               {cardOutcome.detail}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Scan verdict popup — Card is valid / Card is invalid / Renew subscription */}
+      {scanPopup && (
+        <div
+          className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={() => closeScanPopup(false)}
+        >
+          <div
+            className={`rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border-2 cursor-pointer ${
+              scanPopup.kind === 'valid'
+                ? 'bg-white dark:bg-slate-900 border-emerald-500'
+                : scanPopup.kind === 'renew'
+                  ? 'bg-white dark:bg-slate-900 border-amber-400'
+                  : 'bg-white dark:bg-slate-900 border-red-500'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span
+              className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${
+                scanPopup.kind === 'valid'
+                  ? 'bg-emerald-600 text-white'
+                  : scanPopup.kind === 'renew'
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-red-600 text-white'
+              }`}
+            >
+              {scanPopup.kind === 'valid' ? (
+                <CheckCircle2 className="w-7 h-7" />
+              ) : (
+                <AlertTriangle className="w-7 h-7" />
+              )}
+            </span>
+            <p
+              className={`mt-3 text-base font-black uppercase tracking-wider ${
+                scanPopup.kind === 'valid'
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : scanPopup.kind === 'renew'
+                    ? 'text-amber-700 dark:text-amber-300'
+                    : 'text-red-700 dark:text-red-300'
+              }`}
+            >
+              {scanPopup.message}
+            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+              {scanPopup.detail}
+            </p>
+            <button
+              type="button"
+              onClick={() => closeScanPopup(scanPopup.kind === 'valid')}
+              className={`mt-4 w-full py-2.5 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${
+                scanPopup.kind === 'valid'
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : scanPopup.kind === 'renew'
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : 'bg-red-600 hover:bg-red-700'
+              }`}
+            >
+              {scanPopup.kind === 'valid' ? 'Open discount form' : 'Scan again'}
+            </button>
+            <p className="text-[10px] font-semibold text-slate-400 mt-2 uppercase tracking-widest">
+              {scanPopup.kind === 'valid'
+                ? 'Continuing automatically…'
+                : 'This popup closes automatically…'}
             </p>
           </div>
         </div>
@@ -678,9 +810,20 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
           </>
         ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
+
         {/* LEFT COLUMN: CAMERA SCANNER & SIMULATOR ACCORDION */}
-        <div className="lg:col-span-6 space-y-6" id="qr-scanner-terminal-box">
+
+        {/* Shop stage 1: the member-QR scanner card is the only panel on the
+            page — after the verdict popup it hands over to the form (stage 2). */}
+        {isShopSession && shopScanStage === 'form' ? null : (
+        <div
+          className={
+            isShopSession
+              ? "lg:col-span-12 mx-auto w-full max-w-xl space-y-6"
+              : "lg:col-span-6 space-y-6"
+          }
+          id="qr-scanner-terminal-box"
+        >
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Step 1: Scan Member Card</span>
@@ -792,9 +935,21 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
             </div>
           </div>
         </div>
+        )}
 
         {/* RIGHT COLUMN: TRANSACTION FORM & LIVE CALCULATOR */}
-        <div ref={discountFormRef} className="lg:col-span-6 scroll-mt-6" id="qr-transaction-calculator-container">
+
+        {/* Shop stage 2: only the authenticated discount form is on the page */}
+        {isShopSession && shopScanStage === 'scan' ? null : (
+        <div
+          ref={discountFormRef}
+          className={
+            isShopSession
+              ? "lg:col-span-12 mx-auto w-full max-w-2xl scroll-mt-6"
+              : "lg:col-span-6 scroll-mt-6"
+          }
+          id="qr-transaction-calculator-container"
+        >
           <form onSubmit={handleRecordTransaction} className="bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-2xl p-5 md:p-6 space-y-5 text-slate-800 dark:text-slate-100">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Step 2: Process Purchase Record</span>
@@ -805,6 +960,15 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                 </span>
               )}
             </div>
+            {isShopSession && (
+              <button
+                type="button"
+                onClick={backToScanStage}
+                className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline uppercase tracking-wider cursor-pointer flex items-center gap-1.5"
+              >
+                ← Scan another member card
+              </button>
+            )}
 
             {/* Scanned Customer Input (Read-only status) */}
             <div>
@@ -972,7 +1136,9 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
             )}
           </form>
         </div>
-        </div>
+        )}
+
+      </div>
         )}
 
       </div>

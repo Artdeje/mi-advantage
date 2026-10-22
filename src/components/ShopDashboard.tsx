@@ -261,11 +261,15 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
     reportWindow.document.close();
   };
 
-  // Load shop data
+  // Load shop data — one parallel round-trip instead of three sequential ones.
   const loadData = async () => {
     setLoading(true);
     db.getCustomization().then(setCustomization).catch(() => setCustomization(null));
-    const shopsList = await db.getShops();
+    const [shopsList, allSales, shopProducts] = await Promise.all([
+      db.getShops(),
+      db.getSales(),
+      db.getProducts(shopUser.id),
+    ]);
     const currentShop = shopsList.find(s => s.id === shopUser.id);
     if (currentShop) {
       setShopDetails(currentShop);
@@ -278,12 +282,10 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
       setAccountDescription(currentShop.description || '');
     }
 
-    const allSales = await db.getSales();
     const shopSales = allSales.filter(sale => sale.shop_id === shopUser.id);
     shopSales.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     setSales(shopSales);
 
-    const shopProducts = await db.getProducts(shopUser.id);
     setProducts(shopProducts);
     setLoading(false);
   };
@@ -528,9 +530,10 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
         setScanDone(false);
         setAmountBefore('');
         setScanErrorState(null);
-        
-        // Refresh local data
-        await loadData();
+
+        // Local refresh only — a full data reload here costs seconds and the
+        // report list just needs the new record on top.
+        setSales((prev) => [sale, ...prev.filter((s) => s.id !== sale.id)]);
 
         setTimeout(() => setTxSuccess(''), 5000);
       }

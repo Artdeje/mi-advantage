@@ -259,15 +259,19 @@ export default function AdminDashboard({
   const [customFromDate, setCustomFromDate] = useState("");
   const [customToDate, setCustomToDate] = useState("");
 
-  // Load all admin data
+  // Load all admin data — one parallel round-trip instead of six sequential
+  // ones (each server hop costs ~0.5s, so sequential awaits stacked ~3s).
   const loadData = async () => {
     try {
-      const listShops = await db.getShops();
-      const listCustomers = await db.getCustomers();
-      const listSales = await db.getSales();
-      const listLogs = await db.getAuditLogs();
-      const currentCust = await db.getCustomization();
-      const listAdmins = await db.getAdmins();
+      const [listShops, listCustomers, listSales, listLogs, currentCust, listAdmins] =
+        await Promise.all([
+          db.getShops(),
+          db.getCustomers(),
+          db.getSales(),
+          db.getAuditLogs(),
+          db.getCustomization(),
+          db.getAdmins(),
+        ]);
 
       setShops(listShops);
       setCustomers(listCustomers);
