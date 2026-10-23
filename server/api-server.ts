@@ -206,10 +206,12 @@ app.post("/api/db/auth/login", async (req, res) => {
     const admin = (adminRows || [])[0];
     if (admin) {
       let passwordMatch;
-      // Try bcrypt first; fall back to plaintext comparison for legacy databases
-      try {
+      // Check if stored password is a bcrypt hash (starts with $2a$, $2b$, or $2y$)
+      const isBcryptHash = /^\$2[aby]\$/.test(admin.password || "");
+      if (isBcryptHash) {
         passwordMatch = await bcrypt.compare(password, admin.password || "");
-      } catch {
+      } else {
+        // Plaintext password comparison for legacy databases
         passwordMatch = password === (admin.password || "");
       }
       if (!passwordMatch) { res.status(401).json({ error: "Invalid password." }); return; }
@@ -243,10 +245,12 @@ app.post("/api/db/auth/login", async (req, res) => {
     const shop = (shopRows || [])[0];
     if (shop) {
       let passwordMatch;
-      // Try bcrypt first; fall back to plaintext comparison for legacy databases
-      try {
+      // Check if stored password is a bcrypt hash (starts with $2a$, $2b$, or $2y$)
+      const isBcryptHash = /^\$2[aby]\$/.test(shop.password || "");
+      if (isBcryptHash) {
         passwordMatch = await bcrypt.compare(password, shop.password || "");
-      } catch {
+      } else {
+        // Plaintext password comparison for legacy databases
         passwordMatch = password === (shop.password || "");
       }
       if (!passwordMatch) { res.status(401).json({ error: "Invalid password." }); return; }
