@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, getCustomerCardBlockReason, buildShopUrl, BUSINESS_TYPES, BUSINESS_TYPE_LABELS, DISCOUNT_SCOPES, DISCOUNT_SCOPE_LABELS } from '../lib/supabase';
+import { db, getCustomerCardBlockReason, getCardScanOutcome, buildShopUrl } from '../lib/supabase';
 import { getSupabase } from '../lib/supabaseClient';
 import { readImageAsDataUrl } from '../lib/imageUtil';
 import { Shop, Sale, Customer, Product, Customization } from '../types';
@@ -10,7 +10,7 @@ import {
   Store, Camera, RefreshCw, ShoppingBag, CheckCircle2, AlertTriangle,
   User, Users, DollarSign, Tag, TrendingUp, History, Upload, UserCheck,
   Search, Filter, ArrowUpDown, FileText, Printer, LayoutDashboard, Settings, BarChart3,
-  Mail, Lock, Eye, EyeOff, ImageIcon, XCircle,
+  Mail, Lock, Eye, EyeOff, ImageIcon, XCircle, Menu,
 } from './AdminIcons';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import ThemeToggle from './ThemeToggle';
@@ -22,6 +22,29 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'products' | 'account'>('dashboard');
+  // Collapse the tab row behind a "Menu" toggle on small screens.
+  const [tabNavOpen, setTabNavOpen] = useState(false);
+
+  // Scan verdict popup — same playbook as the /scan terminal: blocked verdicts
+  // carry animated warning lights and never navigate; valid scans hand off to
+  // the dedicated scan terminal page with the card auto-filled.
+  const [scanVerdict, setScanVerdict] = useState<null | { kind: 'valid' | 'invalid' | 'renew'; message: string; detail: string }>(null);
+  const scanVerdictTimer = useRef<number | null>(null);
+  const showScanVerdict = (kind: 'valid' | 'invalid' | 'renew', message: string, detail: string, handoffHash?: string) => {
+    if (scanVerdictTimer.current) window.clearTimeout(scanVerdictTimer.current);
+    setScanVerdict({ kind, message, detail });
+    if (kind === 'valid' && handoffHash) {
+      scanVerdictTimer.current = window.setTimeout(() => {
+        setScanVerdict(null);
+        location.hash = handoffHash;
+      }, 1000);
+      return;
+    }
+    scanVerdictTimer.current = window.setTimeout(() => {
+      setScanVerdict(null);
+      scanVerdictTimer.current = null;
+    }, 3600);
+  };
 
   // Scan panel visibility — the scanner lives behind the "Scan Card" button,
   // keeping the dashboard welcome view clean (stats + charts).
@@ -39,8 +62,6 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
   const [accountDiscount, setAccountDiscount] = useState<number | ''>('');
   const [accountEmail, setAccountEmail] = useState('');
   const [accountDescription, setAccountDescription] = useState('');
-  const [accountBusinessType, setAccountBusinessType] = useState<'retail' | 'restaurant' | 'cafe' | 'hotel' | 'services' | 'other'>('retail');
-  const [accountDiscountScope, setAccountDiscountScope] = useState<'all' | 'drinks' | 'food' | 'rooms' | 'services'>('all');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -292,14 +313,6 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
         setAccountDiscount(currentShop.discount_percent);
         setAccountEmail(currentShop.email);
         setAccountDescription(currentShop.description || '');
-        const businessType: typeof BUSINESS_TYPES[number] = (BUSINESS_TYPES as readonly string[]).includes(currentShop.business_type)
-          ? (currentShop.business_type as typeof BUSINESS_TYPES[number])
-          : 'retail';
-        setAccountBusinessType(businessType);
-        const discountScope: typeof DISCOUNT_SCOPES[number] = (DISCOUNT_SCOPES as readonly string[]).includes(currentShop.discount_scope || 'all')
-          ? ((currentShop.discount_scope || 'all') as typeof DISCOUNT_SCOPES[number])
-          : 'all';
-        setAccountDiscountScope(discountScope);
       }
     }
 
@@ -501,32 +514,40 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
     try {
       const customer = await db.getCustomerByQRCode(code.trim());
       if (customer) {
-        // Card validity is disabled the moment the expiration date/time is reached.
-        // The ONLY message shown is the block reason ("Renew your subscription").
-        const blockReason = getCustomerCardBlockReason(customer);
-        if (blockReason) {
-          setScanErrorState(blockReason);
+        const outcome = getCardScanOutcome(customer);
+        if (!outcome.valid) {
+          // Verdict popup only — no navigation, no browser alert. The red
+          // strip in the scanner card keeps the detailed block reason.
+          setScanErrorState(outcome.detail);
           setScannedCustomer(null);
           setScanDone(false);
-          alert(blockReason);
+          const renew = outcome.message.toLowerCase().includes('renew');
+          showScanVerdict(renew ? 'renew' : 'invalid', outcome.message, outcome.detail);
           return;
         }
         setScanErrorState(null);
         setScannedCustomer(customer);
         setScanDone(true);
-        // Close the scanner popup and reveal the filled discount form below.
-        setScanModalOpen(false);
-        setScanOpen(true);
-        // Stay on the dashboard tab and move to the discount-applying form
-        // (fills customer ID + name below) instead of leaving the scanner view.
-        setActiveTab('dashboard');
+        // Verdict popup, then hand the operator off to the dedicated scan
+        // terminal page ("/#/scan?card=…"), which mounts the discount form
+        // pre-filled with this card (same deep-link flow as the uploader).
         const simInput = document.getElementById('shop-simulator-scan-input') as HTMLInputElement | null;
         if (simInput) simInput.value = '';
         await stopCamera();
-        scrollToDiscountForm();
+        showScanVerdict(
+          'valid',
+          outcome.message,
+          outcome.detail,
+          '#/scan?card=' + encodeURIComponent(customer.qr_code),
+        );
       } else {
         setScanErrorState(null);
-        alert(`Invalid customer QR code scanned: "${code}"`);
+        // Unknown card: verdict popup ONLY — never navigates anywhere.
+        showScanVerdict(
+          'invalid',
+          'Card is invalid',
+          `No member card matches "${code.trim()}". Scan or type a registered member card and try again.`,
+        );
       }
     } finally {
       scanLockRef.current = false;
@@ -810,8 +831,6 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
         discount_percent: Number(accountDiscount),
         email: accountEmail,
         description: accountDescription.trim(),
-        business_type: accountBusinessType,
-        discount_scope: accountDiscountScope,
       });
       if (error) {
         setAccountMsg(error);
@@ -927,31 +946,52 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
           </div>
         </div>
 
-        {/* TAB NAVIGATION */}
-        <div className="flex flex-wrap gap-2 mt-6 pt-6 border-t border-slate-100 dark:border-slate-800" id="shop-tab-navigation">
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-            { id: 'products', label: 'Products', icon: ShoppingBag },
-            { id: 'sales', label: 'Sales', icon: BarChart3 },
-            { id: 'account', label: 'Account', icon: Settings },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        {/* TAB NAVIGATION: collapsible "Menu" on mobile, always-visible tabs on desktop */}
+        <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800" id="shop-tab-navigation">
+          <button
+            id="shop-tab-nav-toggle"
+            onClick={() => setTabNavOpen((v) => !v)}
+            className="lg:hidden w-full px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 text-xs font-black uppercase tracking-wider flex items-center justify-between cursor-pointer transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <Menu className="w-4 h-4" />
+              <span>Menu</span>
+            </span>
+            <svg
+              className={`w-4 h-4 transition-transform duration-150 ${tabNavOpen ? 'rotate-180' : ''}`}
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          <div
+            id="shop-tab-nav-items"
+            className={`${tabNavOpen ? 'flex' : 'hidden'} lg:flex flex-wrap gap-2 mt-2 lg:mt-3`}
+          >
+            {[
+              { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+              { id: 'products', label: 'Products', icon: ShoppingBag },
+              { id: 'sales', label: 'Sales', icon: BarChart3 },
+              { id: 'account', label: 'Account', icon: Settings },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* FINANCIAL SUMMARY HIGHLIGHT CARDS - Always visible */}
@@ -1149,6 +1189,71 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
                 </div>
               </div>
             </div>
+            )}
+            {/* Scan verdict popup — valid cards hand off to the scan terminal;
+                blocked / unknown cards stay put with animated warning lights. */}
+            {scanVerdict && (
+              <div
+                className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]"
+                onClick={() => { if (scanVerdictTimer.current) { window.clearTimeout(scanVerdictTimer.current); scanVerdictTimer.current = null; } setScanVerdict(null); }}
+              >
+                <div
+                  className={`bg-white dark:bg-slate-900 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border-2 cursor-pointer ${
+                    scanVerdict.kind === 'valid'
+                      ? 'border-emerald-500'
+                      : scanVerdict.kind === 'renew'
+                        ? 'border-amber-400 mi-warn-ring-amber'
+                        : 'border-red-500 mi-warn-ring'
+                  }`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {scanVerdict.kind !== 'valid' && (
+                    <div className="flex items-center justify-center gap-3 mb-3">
+                      <span className={`mi-lamp ${scanVerdict.kind === 'renew' ? 'mi-lamp-amber' : 'mi-lamp-red'}`} />
+                      <span className={`w-2 h-2 rounded-full ${scanVerdict.kind === 'renew' ? 'bg-amber-300' : 'bg-red-300'}`} />
+                      <span className={`mi-lamp ${scanVerdict.kind === 'renew' ? 'mi-lamp-red' : 'mi-lamp-amber'}`} />
+                    </div>
+                  )}
+                  <div className="flex justify-center">
+                    <span
+                      className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
+                        scanVerdict.kind === 'valid'
+                          ? 'bg-emerald-600 text-white'
+                          : scanVerdict.kind === 'renew'
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-red-600 text-white'
+                      }`}
+                    >
+                      {scanVerdict.kind === 'valid' ? <CheckCircle2 className="w-7 h-7" /> : <AlertTriangle className="w-7 h-7" />}
+                    </span>
+                  </div>
+                  <p
+                    className={`mt-3 text-base font-black uppercase tracking-wider ${
+                      scanVerdict.kind === 'valid'
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : scanVerdict.kind === 'renew'
+                          ? 'text-amber-700 dark:text-amber-300'
+                          : 'text-red-700 dark:text-red-300'
+                    }`}
+                  >
+                    {scanVerdict.message}
+                  </p>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{scanVerdict.detail}</p>
+                  <button
+                    type="button"
+                    onClick={() => { if (scanVerdictTimer.current) { window.clearTimeout(scanVerdictTimer.current); scanVerdictTimer.current = null; } setScanVerdict(null); }}
+                    className={`mt-4 w-full py-2.5 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${
+                      scanVerdict.kind === 'valid'
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : scanVerdict.kind === 'renew'
+                          ? 'bg-amber-600 hover:bg-amber-700'
+                          : 'bg-red-600 hover:bg-red-700'
+                    }`}
+                  >
+                    {scanVerdict.kind === 'valid' ? 'Continue to terminal' : 'Scan again'}
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* DASHBOARD CHARTS: top customers + sales trend */}
@@ -1747,32 +1852,6 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
                     placeholder="Tell shoppers what your business offers..."
                     className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold resize-y"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Shown in the partner details view customers see after tapping your outlet.</p>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">Business Type</label>
-                  <select
-                    value={accountBusinessType}
-                    onChange={(e) => setAccountBusinessType(e.target.value as typeof BUSINESS_TYPES[number])}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold cursor-pointer"
-                  >
-                    {BUSINESS_TYPES.map((t) => (
-                      <option key={t} value={t}>{BUSINESS_TYPE_LABELS[t]}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">Discount Scope</label>
-                  <select
-                    value={accountDiscountScope}
-                    onChange={(e) => setAccountDiscountScope(e.target.value as typeof DISCOUNT_SCOPES[number])}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold cursor-pointer"
-                  >
-                    {DISCOUNT_SCOPES.map((s) => (
-                      <option key={s} value={s}>{DISCOUNT_SCOPE_LABELS[s]}</option>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-slate-400 mt-1">The discount rate itself is set by the administrator.</p>
                 </div>
                 <button
                   type="submit"

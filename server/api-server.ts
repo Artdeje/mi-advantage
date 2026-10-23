@@ -19,7 +19,7 @@ const app = express();
 app.use(express.json({ limit: "5mb" }));
 
 app.use((_req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", "https://mi-advantage.ai.studio");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   // Live data must never be served from the browser cache — a revalidated
@@ -42,11 +42,20 @@ const ALLOWED_TABLES = new Set([
 ]);
 function validateTable(t: string) { return ALLOWED_TABLES.has(t); }
 
+// --- Password hashing (bcrypt) ---
+import bcrypt from "bcryptjs";
+const SALT_ROUNDS = 10;
+
 // Allow only safe SQL identifiers (column names) to prevent injection via
 // order/filter/data keys. Table names are already whitelisted above.
 function isSafeIdentifier(name: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
 }
+
+// --- Rate limiting for auth endpoints ---
+const AUTH_RATE_LIMIT = new Map<string, number[]>();
+const AUTH_RATE_MAX = 10;
+const AUTH_RATE_WINDOW_MS = 60 * 1000;
 
 // ==========================================
 // SESSION STORE (in-memory token map)
@@ -176,6 +185,15 @@ app.use(authMiddleware);
 // ==========================================
 
 app.post("/api/db/auth/login", async (req, res) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const hits = (AUTH_RATE_LIMIT.get(clientIp) || []).filter((t) => Date.now() - t < AUTH_RATE_WINDOW_MS);
+  if (hits.length >= AUTH_RATE_MAX) {
+    res.status(429).json({ error: "Too many authentication attempts. Please try again later." });
+    return;
+  }
+  hits.push(Date.now());
+  AUTH_RATE_LIMIT.set(clientIp, hits);
+
   try {
     const { email, password } = req.body || {};
     if (!email || !password) { res.status(400).json({ error: "Email and password required." }); return; }
@@ -187,7 +205,8 @@ app.post("/api/db/auth/login", async (req, res) => {
     if (adminErr) throw adminErr;
     const admin = (adminRows || [])[0];
     if (admin) {
-      if (password !== admin.password) { res.status(401).json({ error: "Invalid password." }); return; }
+      const passwordMatch = await bcrypt.compare(password, admin.password || "");
+      if (!passwordMatch) { res.status(401).json({ error: "Invalid password." }); return; }
       if (admin.status === "suspended") { res.status(403).json({ error: "Account suspended." }); return; }
       if (admin.email_verified === false) {
         res.status(403).json({ error: "Email not verified.", code: "EMAIL_NOT_VERIFIED", userType: "admin" });
@@ -217,7 +236,8 @@ app.post("/api/db/auth/login", async (req, res) => {
     if (shopErr) throw shopErr;
     const shop = (shopRows || [])[0];
     if (shop) {
-      if (!shop.password || password !== shop.password) { res.status(401).json({ error: "Invalid password." }); return; }
+      const passwordMatch = await bcrypt.compare(password, shop.password || "");
+      if (!passwordMatch) { res.status(401).json({ error: "Invalid password." }); return; }
       if (shop.email_verified === false) {
         res.status(403).json({ error: "Email not verified.", code: "EMAIL_NOT_VERIFIED", userType: "shop" });
         return;
@@ -272,6 +292,15 @@ async function sendMailBestEffort(to: string, subject: string, html: string) {
 
 // --- Public: Admin registration ---
 app.post("/api/db/auth/register-admin", async (req, res) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const hits = (AUTH_RATE_LIMIT.get(clientIp) || []).filter((t) => Date.now() - t < AUTH_RATE_WINDOW_MS);
+  if (hits.length >= AUTH_RATE_MAX) {
+    res.status(429).json({ error: "Too many registration attempts. Please try again later." });
+    return;
+  }
+  hits.push(Date.now());
+  AUTH_RATE_LIMIT.set(clientIp, hits);
+
   try {
     const { name, email, password, role } = req.body || {};
     if (!name || !email || !password) {
@@ -279,6 +308,7 @@ app.post("/api/db/auth/register-admin", async (req, res) => {
     }
     const lowerEmail = String(email).toLowerCase().trim();
     const adminRole = role && ["super_admin", "admin", "manager"].includes(role) ? role : "admin";
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
     const { data: existing, error: existingErr } = await getDb()
       .from("admins").select("id").ilike("email", escapeLike(lowerEmail)).limit(1);
     if (existingErr) throw existingErr;
@@ -287,7 +317,7 @@ app.post("/api/db/auth/register-admin", async (req, res) => {
     }
     const id = uid("admin");
     const { error: insertErr } = await getDb().from("admins").insert({
-      id, name, email: lowerEmail, password, role: adminRole, status: "active", email_verified: false,
+      id, name, email: lowerEmail, password: hashedPassword, role: adminRole, status: "active", email_verified: false,
     });
     if (insertErr) throw insertErr;
     // Generate and store verification code
@@ -307,6 +337,15 @@ app.post("/api/db/auth/register-admin", async (req, res) => {
 
 // --- Public: Verify email code ---
 app.post("/api/db/auth/verify-email", async (req, res) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const hits = (AUTH_RATE_LIMIT.get(clientIp) || []).filter((t) => Date.now() - t < AUTH_RATE_WINDOW_MS);
+  if (hits.length >= AUTH_RATE_MAX) {
+    res.status(429).json({ error: "Too many verification attempts. Please try again later." });
+    return;
+  }
+  hits.push(Date.now());
+  AUTH_RATE_LIMIT.set(clientIp, hits);
+
   try {
     const { email, code, purpose } = req.body || {};
     if (!email || !code) {
@@ -344,6 +383,15 @@ app.post("/api/db/auth/verify-email", async (req, res) => {
 
 // --- Public: Request password reset ---
 app.post("/api/db/auth/request-reset", async (req, res) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const hits = (AUTH_RATE_LIMIT.get(clientIp) || []).filter((t) => Date.now() - t < AUTH_RATE_WINDOW_MS);
+  if (hits.length >= AUTH_RATE_MAX) {
+    res.status(429).json({ error: "Too many password reset requests. Please try again later." });
+    return;
+  }
+  hits.push(Date.now());
+  AUTH_RATE_LIMIT.set(clientIp, hits);
+
   try {
     const { email } = req.body || {};
     if (!email) { res.status(400).json({ error: "Email is required." }); return; }
@@ -376,6 +424,15 @@ app.post("/api/db/auth/request-reset", async (req, res) => {
 
 // --- Public: Reset password with code ---
 app.post("/api/db/auth/reset-password", async (req, res) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const hits = (AUTH_RATE_LIMIT.get(clientIp) || []).filter((t) => Date.now() - t < AUTH_RATE_WINDOW_MS);
+  if (hits.length >= AUTH_RATE_MAX) {
+    res.status(429).json({ error: "Too many password reset attempts. Please try again later." });
+    return;
+  }
+  hits.push(Date.now());
+  AUTH_RATE_LIMIT.set(clientIp, hits);
+
   try {
     const { email, code, newPassword } = req.body || {};
     if (!email || !code || !newPassword) {
@@ -598,7 +655,7 @@ const DEFAULT_SEED: Record<string, any[]> = {
     { id: "prod-6", shop_id: "shop-4", name: "Day Pass", price: 15000, stock: 30, description: "Full-day resort access with lunch.", status: "active" },
   ],
   customization: [
-    { id: "global-config", theme_color: "green", title: "Mi Advantage QR Card Scan & Shop", subtitle: "Member Privilege Program", scan_title: "Member Scan & Loyalty Terminal", scan_subtitle: "Scan customer membership cards in real-time to compute discounts and record transaction logs.", valid_banner_title: "Card is valid", valid_banner_detail: "This member card is active and can be used for a discount.", home_h1: "Instant Merchant Discounts", home_h2: "QR Member Advantage System", home_p: "Scan your digital member card at any registered partner outlet to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly." },
+    { id: "global-config", theme_color: "green", title: "Mi Advantage QR Card Scan & Shop", subtitle: "Member Privilege Program", scan_title: "Member Scan & Loyalty Terminal", scan_subtitle: "Scan customer membership cards in real-time to compute discounts and record transaction logs.", home_h1: "Instant Merchant Discounts", home_h2: "QR Member Advantage System", home_p: "Scan your digital member card at any registered partner outlet to instantly redeem high-value discount privileges. Connect with top local merchants, supermarkets, and cafes seamlessly." },
   ],
 };
 

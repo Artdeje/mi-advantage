@@ -195,10 +195,8 @@ export default function AdminDashboard({
   const [titleInput, setTitleInput] = useState("");
   const [subtitleInput, setSubtitleInput] = useState("");
   // Scan terminal heading fields
-const [scanTitleInput, setScanTitleInput] = useState("");
-const [scanSubtitleInput, setScanSubtitleInput] = useState("");
-const [validBannerTitleInput, setValidBannerTitleInput] = useState("");
-const [validBannerDetailInput, setValidBannerDetailInput] = useState("");
+  const [scanTitleInput, setScanTitleInput] = useState("");
+  const [scanSubtitleInput, setScanSubtitleInput] = useState("");
   const [themeInput, setThemeInput] = useState<
     "green" | "teal" | "emerald" | "dark-green" | "blue"
   >("green");
@@ -305,8 +303,6 @@ const [validBannerDetailInput, setValidBannerDetailInput] = useState("");
     setSubtitleInput(currentCust.subtitle || "");
     setScanTitleInput(currentCust.scan_title || "");
     setScanSubtitleInput(currentCust.scan_subtitle || "");
-    setValidBannerTitleInput(currentCust.valid_banner_title || "");
-    setValidBannerDetailInput(currentCust.valid_banner_detail || "");
     setThemeInput(currentCust.theme_color || "green");
     setLogoInput(currentCust.logo_url || "");
     setFaviconInput(currentCust.favicon_url || "");
@@ -717,7 +713,7 @@ const [validBannerDetailInput, setValidBannerDetailInput] = useState("");
 
   const saveBrandingScanTerminal = async (e: React.FormEvent) => {
     e.preventDefault();
-    await saveBrandingField({ scan_title: scanTitleInput, scan_subtitle: scanSubtitleInput, valid_banner_title: validBannerTitleInput, valid_banner_detail: validBannerDetailInput }, "Scan terminal content");
+    await saveBrandingField({ scan_title: scanTitleInput, scan_subtitle: scanSubtitleInput }, "Scan terminal content");
   };
 
   const saveBrandingFeatures = async (e: React.FormEvent) => {
@@ -3381,14 +3377,6 @@ const [validBannerDetailInput, setValidBannerDetailInput] = useState("");
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Terminal Subtitle</label>
                     <input type="text" value={scanSubtitleInput} onChange={(e) => setScanSubtitleInput(e.target.value)} placeholder="e.g. Scan customer membership cards in real-time" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Valid Banner Title</label>
-                    <input type="text" value={validBannerTitleInput} onChange={(e) => setValidBannerTitleInput(e.target.value)} placeholder="e.g. Card is valid" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Valid Banner Message</label>
-                    <input type="text" value={validBannerDetailInput} onChange={(e) => setValidBannerDetailInput(e.target.value)} placeholder="e.g. This member card is active and can be used for a discount." className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                   <div className="lg:col-span-2">
                     <button
