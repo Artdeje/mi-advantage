@@ -205,7 +205,13 @@ app.post("/api/db/auth/login", async (req, res) => {
     if (adminErr) throw adminErr;
     const admin = (adminRows || [])[0];
     if (admin) {
-      const passwordMatch = await bcrypt.compare(password, admin.password || "");
+      let passwordMatch;
+      // Try bcrypt first; fall back to plaintext comparison for legacy databases
+      try {
+        passwordMatch = await bcrypt.compare(password, admin.password || "");
+      } catch {
+        passwordMatch = password === (admin.password || "");
+      }
       if (!passwordMatch) { res.status(401).json({ error: "Invalid password." }); return; }
       if (admin.status === "suspended") { res.status(403).json({ error: "Account suspended." }); return; }
       if (admin.email_verified === false) {
@@ -236,7 +242,13 @@ app.post("/api/db/auth/login", async (req, res) => {
     if (shopErr) throw shopErr;
     const shop = (shopRows || [])[0];
     if (shop) {
-      const passwordMatch = await bcrypt.compare(password, shop.password || "");
+      let passwordMatch;
+      // Try bcrypt first; fall back to plaintext comparison for legacy databases
+      try {
+        passwordMatch = await bcrypt.compare(password, shop.password || "");
+      } catch {
+        passwordMatch = password === (shop.password || "");
+      }
       if (!passwordMatch) { res.status(401).json({ error: "Invalid password." }); return; }
       if (shop.email_verified === false) {
         res.status(403).json({ error: "Email not verified.", code: "EMAIL_NOT_VERIFIED", userType: "shop" });
