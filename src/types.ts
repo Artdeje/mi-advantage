@@ -4,6 +4,7 @@ export interface Customer {
   email?: string | null; // optional — self-registered cards have no email
   phone: string;
   qr_code: string; // unique scan code (e.g., "CUST-001")
+  activation_pin?: string; // PIN required to confirm card use in a new session
   created_at: string;
   valid_until?: string; // Card validation/expiry date
   customer_type?: 'student' | 'other'; // Student/Other membership type

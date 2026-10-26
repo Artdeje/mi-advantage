@@ -45,6 +45,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const isShopSession = db.currentUser?.role === 'shop';
   // External scanner result: show the partner directory instead of a form.
   const [showPartners, setShowPartners] = useState(false);
+  // Activation PIN prompt for external scanner scans.
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [pendingPinCustomer, setPendingPinCustomer] = useState<Customer | null>(null);
+  const [enteredPin, setEnteredPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
   // Deep link ?shop=SHOP-1234 (from a scanned counter QR) pre-selects the shop.
   const [pendingShopCode, setPendingShopCode] = useState('');
   // Deep link ?card=CUST-0001 (from an external QR scanner) authenticates the card.
@@ -132,6 +137,29 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       setScanPopup(null);
       scanPopupTimer.current = null;
     }, 3600);
+  };
+
+  const handlePinVerify = () => {
+    if (!pendingPinCustomer) return;
+    if (enteredPin === pendingPinCustomer.activation_pin) {
+      setScannedCustomer(pendingPinCustomer);
+      setShowPinPrompt(false);
+      setPendingPinCustomer(null);
+      setEnteredPin('');
+      setPinError(null);
+      setShowPartners(true);
+      showScanPopup('valid', 'Card is valid', 'PIN verified. Browse partner outlets below.');
+      scrollToPartners();
+    } else {
+      setPinError('Incorrect PIN. Please try again.');
+    }
+  };
+
+  const handlePinCancel = () => {
+    setShowPinPrompt(false);
+    setPendingPinCustomer(null);
+    setEnteredPin('');
+    setPinError(null);
   };
 
   const closeScanPopup = (proceed: boolean) => {
@@ -272,11 +300,27 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         return;
       }
       setScanErrorState(null);
-      setScannedCustomer(customer);
-      setScanDone(true);
-      // Verdict popup handles the navigation itself (direct auth).
-      showScanPopup('valid', outcome.message, outcome.detail);
-      if (isShopSession) scrollToDiscountForm();
+      // Only shop sessions authenticate the card to the discount form.
+      // External/guest scans require PIN confirmation before showing partners.
+      if (isShopSession) {
+        setScannedCustomer(customer);
+        setScanDone(true);
+        showScanPopup('valid', outcome.message, outcome.detail);
+        scrollToDiscountForm();
+      } else {
+        // External scanner: require activation PIN before showing partners.
+        if (customer.activation_pin) {
+          setPendingPinCustomer(customer);
+          setShowPinPrompt(true);
+          setEnteredPin('');
+          setPinError(null);
+        } else {
+          // Legacy cards without PIN: show partners directly.
+          setShowPartners(true);
+          showScanPopup('valid', outcome.message, outcome.detail);
+          scrollToPartners();
+        }
+      }
     })();
     return () => {
       cancelled = true;
@@ -565,6 +609,50 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       setIsSubmittingTx(false);
     }
   };
+
+// --- Activation PIN Prompt (external scanner) ---
+  if (showPinPrompt && pendingPinCustomer) {
+    return (
+      <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg p-8 space-y-6">
+          <div className="text-center">
+            <div className="w-14 h-14 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Activation PIN Required</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Enter the 4-digit PIN for card <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{pendingPinCustomer.qr_code}</span>
+            </p>
+          </div>
+          <div className="space-y-4">
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={enteredPin}
+              onChange={(e) => setEnteredPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder="••••"
+              className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl text-center text-2xl tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              autoFocus
+            />
+            {pinError && <div className="bg-red-50 dark:bg-red-950/50 border border-red-100 dark:border-red-900 text-red-600 dark:text-red-400 p-3 rounded-xl text-xs text-center">{pinError}</div>}
+            <button
+              onClick={handlePinVerify}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold cursor-pointer"
+            >
+              Verify PIN
+            </button>
+            <button
+              onClick={handlePinCancel}
+              className="w-full py-2 text-slate-500 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 text-xs font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 py-6 px-4">

@@ -1174,6 +1174,8 @@ export class SupabaseDatabaseService {
     if (await areCustomerV6ColumnsReady()) {
       newCust.subscription_status = "paid";
     }
+    // Activation PIN: 4-digit code for confirming card use in a new session.
+    newCust.activation_pin = String(Math.floor(1000 + Math.random() * 9000));
 
     try {
       const { error } = await getSupabase()

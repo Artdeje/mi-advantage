@@ -541,12 +541,14 @@ app.post("/api/db/auth/register-customer", async (req, res) => {
     }
     const id = uid("cust");
     const onlineUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    // supabase-schema.sql guarantees subscription_status — no migration probe needed.
+    // Generate a 4-digit activation PIN for the card.
+    const activationPin = String(Math.floor(1000 + Math.random() * 9000));
     const customerRow: Record<string, any> = {
       id, name: cleanName, phone: cleanPhone, qr_code: code, valid_until: onlineUntil,
       customer_type: type, student_id: type === "student" ? cleanStudentId : "",
       university: type === "student" ? cleanUniversity : "", referee_number: refCode,
       card_status: "suspended", credit_status: "pending", subscription_status: "unpaid",
+      activation_pin: activationPin,
     };
     let { error: custErr } = await getDb().from("customers").insert(customerRow);
     if (custErr && isEmailNotNullError(custErr)) {
@@ -1176,6 +1178,25 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     const { error } = await getDb().from("customization").select("id", { head: true });
     if (error) throw error;
     console.log("Supabase: connection OK.");
+    // Auto-seed default admin if none exists (prevents login lockout).
+    try {
+      const { data: admins, error: adminCheckErr } = await getDb().from("admins").select("id").limit(1);
+      console.log("Admin check:", admins?.length, "admins found", adminCheckErr?.message || "");
+      if (!admins || admins.length === 0) {
+        const hashedPw = await bcrypt.hash("admin123", SALT_ROUNDS);
+        const { error: insertErr } = await getDb().from("admins").insert({
+          id: "admin-1", name: "Super Administrator", email: "artdeje@mail.com",
+          password: hashedPw, role: "super_admin", status: "active", email_verified: true,
+        });
+        if (insertErr) {
+          console.error("Seed insert error:", insertErr.message);
+        } else {
+          console.log("Seeded default admin: artdeje@mail.com / admin123");
+        }
+      }
+    } catch (seedErr: any) {
+      console.error("Auto-seed admin failed:", seedErr?.message);
+    }
   } catch (err: any) {
     console.error(`Supabase: ${dbErrorMessage(err)}`);
   }
