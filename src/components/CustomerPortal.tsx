@@ -592,10 +592,18 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         setDiscountPinError('Incorrect PIN. Please try again.');
         return;
       }
+      // PIN correct — proceed with transaction (do NOT re-submit form)
       setShowDiscountPinPrompt(false);
       setDiscountPin('');
       setDiscountPinError(null);
     }
+
+    await executeTransaction();
+  };
+
+  // Core transaction logic — called after PIN verification (if needed)
+  const executeTransaction = async () => {
+    if (!scannedCustomer) return;
 
     // Double check if card is blocked (absolute block at transaction time)
     const blockReason = getCustomerCardBlockReason(scannedCustomer);
@@ -721,8 +729,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                   setShowDiscountPinPrompt(false);
                   setDiscountPin('');
                   setDiscountPinError(null);
-                  const form = document.querySelector('form');
-                  if (form) form.requestSubmit();
+                  executeTransaction();
                 } else {
                   setDiscountPinError('Incorrect PIN. Please try again.');
                 }
