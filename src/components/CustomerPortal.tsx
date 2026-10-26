@@ -516,8 +516,12 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         }
 
         setScanErrorState(null);
-        setScannedCustomer(customer);
-        setScanDone(true);
+        // Only shop sessions authenticate the card to the discount form.
+        // External/guest scans show partner directory only (no form auth).
+        if (isShopSession) {
+          setScannedCustomer(customer);
+          setScanDone(true);
+        }
         await stopCameraScanner();
         // Verdict popup handles the navigation itself (direct auth): the
         // terminal form (shop) or the partner directory (guest) mounts right
