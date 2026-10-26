@@ -48,6 +48,7 @@ export default function SelfRegistrationPage() {
   // Registration form (deliberately NO email field; all members are general)
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [activationPin, setActivationPin] = useState('');
   const [referee, setReferee] = useState(initialRef);
   const [refereeName, setRefereeName] = useState<string | null>(null);
   const [formMsg, setFormMsg] = useState('');
@@ -112,6 +113,10 @@ export default function SelfRegistrationPage() {
       setFormMsg('Please enter your full name and phone number.');
       return;
     }
+    if (!/^\d{4}$/.test(activationPin)) {
+      setFormMsg('Please enter a 4-digit activation PIN.');
+      return;
+    }
     setSubmitting(true);
     try {
       const { customer: c, error } = await db.selfRegisterCustomer({
@@ -121,6 +126,7 @@ export default function SelfRegistrationPage() {
         student_id: '',
         university: '',
         referee_number: referee.trim().toUpperCase(),
+        activation_pin: activationPin,
       });
       if (error || !c) {
         setFormMsg(error || 'Registration failed. Please try again.');
@@ -561,10 +567,15 @@ export default function SelfRegistrationPage() {
                   <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider">Full name *</label>
                   <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Jean Bosco" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider">Phone number *</label>
-                  <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+2507..." className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                </div>
+<div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider">Phone number *</label>
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+2507..." className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider">Activation PIN (4 digits) *</label>
+                <input type="password" inputMode="numeric" maxLength={4} value={activationPin} onChange={(e) => setActivationPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="••••" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                <p className="text-[10px] text-slate-400 mt-1">You will be asked for this PIN every time you apply a discount.</p>
+              </div>
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider">Referrer Card ID (optional)</label>

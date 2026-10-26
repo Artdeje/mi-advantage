@@ -1224,6 +1224,7 @@ export class SupabaseDatabaseService {
     student_id?: string;
     university?: string;
     referee_number?: string;
+    activation_pin?: string;
   }): Promise<{ customer: Customer | null; error: string | null }> {
     try {
       const { data, error } = await getSupabase().registerCustomer(input);

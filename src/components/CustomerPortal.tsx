@@ -47,6 +47,9 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const [showPartners, setShowPartners] = useState(false);
   // Activation PIN prompt for external scanner scans.
   const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [showDiscountPinPrompt, setShowDiscountPinPrompt] = useState(false);
+  const [discountPin, setDiscountPin] = useState('');
+  const [discountPinError, setDiscountPinError] = useState<string | null>(null);
   const [pendingPinCustomer, setPendingPinCustomer] = useState<Customer | null>(null);
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
@@ -519,8 +522,17 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         // Verdict popup handles the navigation itself (direct auth): the
         // terminal form (shop) or the partner directory (guest) mounts right
         // away while the toast confirms the verdict.
-        showScanPopup('valid', outcome.message, outcome.detail);
-        if (isShopSession) scrollToDiscountForm();
+        // For external/guest scans with a PIN, require PIN verification first.
+        if (!isShopSession && customer.activation_pin) {
+          setPendingPinCustomer(customer);
+          setShowPinPrompt(true);
+          setEnteredPin('');
+          setPinError(null);
+        } else {
+          showScanPopup('valid', outcome.message, outcome.detail);
+          if (isShopSession) scrollToDiscountForm();
+          else setShowPartners(true);
+        }
       } else {
         setScanErrorState(null);
         setCardOutcome({
@@ -561,6 +573,25 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const handleRecordTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scannedCustomer) return;
+
+    // If card has an activation PIN, require verification before applying discount.
+    if (scannedCustomer.activation_pin && !showDiscountPinPrompt) {
+      setShowDiscountPinPrompt(true);
+      setDiscountPin('');
+      setDiscountPinError(null);
+      return;
+    }
+
+    // Verify PIN if prompt was shown
+    if (scannedCustomer.activation_pin && showDiscountPinPrompt) {
+      if (discountPin !== scannedCustomer.activation_pin) {
+        setDiscountPinError('Incorrect PIN. Please try again.');
+        return;
+      }
+      setShowDiscountPinPrompt(false);
+      setDiscountPin('');
+      setDiscountPinError(null);
+    }
 
     // Double check if card is blocked (absolute block at transaction time)
     const blockReason = getCustomerCardBlockReason(scannedCustomer);
@@ -644,6 +675,60 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
             </button>
             <button
               onClick={handlePinCancel}
+              className="w-full py-2 text-slate-500 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 text-xs font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+// --- Discount Activation PIN Prompt ---
+  if (showDiscountPinPrompt && scannedCustomer) {
+    return (
+      <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg p-8 space-y-6">
+          <div className="text-center">
+            <div className="w-14 h-14 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Enter Card PIN</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Enter the 4-digit PIN for <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{scannedCustomer.qr_code}</span> to apply the discount
+            </p>
+          </div>
+          <div className="space-y-4">
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={discountPin}
+              onChange={(e) => setDiscountPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder="••••"
+              className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl text-center text-2xl tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              autoFocus
+            />
+            {discountPinError && <div className="bg-red-50 dark:bg-red-950/50 border border-red-100 dark:border-red-900 text-red-600 dark:text-red-400 p-3 rounded-xl text-xs text-center">{discountPinError}</div>}
+            <button
+              onClick={() => {
+                if (discountPin === scannedCustomer.activation_pin) {
+                  setShowDiscountPinPrompt(false);
+                  setDiscountPin('');
+                  setDiscountPinError(null);
+                  const form = document.querySelector('form');
+                  if (form) form.requestSubmit();
+                } else {
+                  setDiscountPinError('Incorrect PIN. Please try again.');
+                }
+              }}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold cursor-pointer"
+            >
+              Verify & Apply Discount
+            </button>
+            <button
+              onClick={() => { setShowDiscountPinPrompt(false); setDiscountPin(''); setDiscountPinError(null); }}
               className="w-full py-2 text-slate-500 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 text-xs font-semibold cursor-pointer"
             >
               Cancel

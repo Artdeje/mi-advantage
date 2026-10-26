@@ -481,7 +481,7 @@ app.post("/api/db/auth/reset-password", async (req, res) => {
 // Discounts stay blocked (subscription unpaid) until activate-subscription.
 app.post("/api/db/auth/register-customer", async (req, res) => {
   try {
-    const { name, phone, customer_type, student_id, university, referee_number } = req.body || {};
+    const { name, phone, customer_type, student_id, university, referee_number, activation_pin } = req.body || {};
     const cleanName = String(name || "").trim();
     const cleanPhone = String(phone || "").trim();
     if (!cleanName || !cleanPhone) {
@@ -541,8 +541,9 @@ app.post("/api/db/auth/register-customer", async (req, res) => {
     }
     const id = uid("cust");
     const onlineUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    // Generate a 4-digit activation PIN for the card.
-    const activationPin = String(Math.floor(1000 + Math.random() * 9000));
+    // Use provided activation PIN (from registration) or generate a 4-digit one.
+    const cleanPin = String(activation_pin || "").trim();
+    const activationPin = /^\d{4}$/.test(cleanPin) ? cleanPin : String(Math.floor(1000 + Math.random() * 9000));
     const customerRow: Record<string, any> = {
       id, name: cleanName, phone: cleanPhone, qr_code: code, valid_until: onlineUntil,
       customer_type: type, student_id: type === "student" ? cleanStudentId : "",
