@@ -63,5 +63,9 @@ ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS scan_title TEXT DEFAUL
 ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS scan_subtitle TEXT DEFAULT 'Scan customer membership cards in real-time to compute discounts and record transaction logs.';
 
 -- =========================================================
+-- 7. CARD ACTIVATION PIN: 4-digit PIN required to apply a discount
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS activation_pin TEXT;
+
+-- =========================================================
 -- DONE. Now run: npm run db:init
 -- =========================================================
