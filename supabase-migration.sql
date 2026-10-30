@@ -55,7 +55,7 @@ UPDATE public.admins SET role = 'super_admin', status = 'active', email_verified
 -- If the super admin row does not exist yet, create it
 INSERT INTO public.admins (id, name, email, password, role, status, email_verified)
 VALUES ('admin-1', 'Super Administrator', 'artdeje@mail.com', 'admin123', 'super_admin', 'active', true)
-ON CONFLICT (email) DO UPDATE SET role = 'super_admin', status = 'active', email_verified = true;
+ON CONFLICT (id) DO UPDATE SET role = 'super_admin', status = 'active', email_verified = true;
 
 -- =========================================================
 -- 6. CUSTOMIZATION: scan terminal heading fields (v9)
