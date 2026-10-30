@@ -770,7 +770,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm space-y-8" id="home-transaction-portal">
       
-      {/* Title Header */}
+      {/* Title Header - hidden once a member is verified (decluttered result view) */}
+      {!(showPartners && scannedCustomer) && (
       <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-5">
         <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900 shadow-sm">
           <QrCode className="w-6 h-6" />
@@ -784,6 +785,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
           </p>
         </div>
       </div>
+      )}
 
       {/* Card validation outcome: "Card is valid" / "Renew subscription" */}
       {cardOutcome && (
@@ -908,20 +910,12 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       {showPartners && scannedCustomer ? (
           <>
           <div id="member-partners-panel" className="space-y-6 scroll-mt-6">
-            {/* Verified member banner */}
-            <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
-              <span className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shrink-0">
-                {scannedCustomer.name.charAt(0).toUpperCase()}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Member card verified</p>
-                <p className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">{scannedCustomer.name}</p>
-                <p className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300">{scannedCustomer.qr_code}</p>
-              </div>
+            {/* Scan another (replaces the removed verified-member banner) */}
+            <div className="flex justify-end">
               <button
                 type="button"
                 onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); }}
-                className="shrink-0 px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer"
+                className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-700"
               >
                 Scan another
               </button>
