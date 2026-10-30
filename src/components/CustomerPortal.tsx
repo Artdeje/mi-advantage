@@ -319,6 +319,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
           setPinError(null);
         } else {
           // Legacy cards without PIN: show partners directly.
+          setScannedCustomer(customer);
           setShowPartners(true);
           showScanPopup('valid', outcome.message, outcome.detail);
           scrollToPartners();
