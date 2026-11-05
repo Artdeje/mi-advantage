@@ -102,7 +102,7 @@ export function extractScanCode(raw: string): string {
 // the public terminal form.
 export function buildShopUrl(shop: { qr_code?: string | null; id?: string; email: string }): string {
   const code = (shop.qr_code || shop.id || "").trim();
-  const base = `${window.location.origin}${window.location.pathname}#/login`;
+  const base = `${window.location.origin}/login`;
   return `${base}?shop=${encodeURIComponent(shop.email)}&shopQr=${encodeURIComponent(code)}`;
 }
 
@@ -112,7 +112,7 @@ export function buildShopUrl(shop: { qr_code?: string | null; id?: string; email
 //  - Scanned by an external phone camera -> the link opens the scan page, which
 //    authenticates the card and shows the partner directory.
 export function buildCardUrl(code: string): string {
-  const base = `${window.location.origin}${window.location.pathname}#/scan`;
+  const base = `${window.location.origin}/scan`;
   return code ? `${base}?card=${encodeURIComponent(code)}` : base;
 }
 

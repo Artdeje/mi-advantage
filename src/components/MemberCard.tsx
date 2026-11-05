@@ -62,7 +62,7 @@ export function formatCardExpiry(validUntil?: string): string {
 
 /** The QR payload — a deep link that works on both scanner types. */
 export function cardQrPayload(qrCode: string): string {
-  const base = `${window.location.origin}${window.location.pathname}#/scan`;
+  const base = `${window.location.origin}/scan`;
   return `${base}?card=${encodeURIComponent(qrCode)}`;
 }
 

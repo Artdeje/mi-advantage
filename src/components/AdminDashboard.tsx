@@ -109,16 +109,16 @@ export default function AdminDashboard({
 }) {
   const navigate = useNavigate();
 
-  // Determine initial tab from URL hash
+  // Determine initial tab from URL path
   const getInitialTab = () => {
-    const hash = window.location.hash;
-    if (hash.includes("/admins")) return "admins";
-    if (hash.includes("/partners")) return "shops";
-    if (hash.includes("/customers")) return "qrs";
-    if (hash.includes("/referrers")) return "referrers";
-    if (hash.includes("/reports")) return "reports";
-    if (hash.includes("/customize")) return "customization";
-    if (hash.includes("/logs")) return "audits";
+    const path = window.location.pathname;
+    if (path.includes("/admins")) return "admins";
+    if (path.includes("/partners")) return "shops";
+    if (path.includes("/customers")) return "qrs";
+    if (path.includes("/referrers")) return "referrers";
+    if (path.includes("/reports")) return "reports";
+    if (path.includes("/customize")) return "customization";
+    if (path.includes("/logs")) return "audits";
     return "analytics";
   };
 
@@ -1547,7 +1547,7 @@ export default function AdminDashboard({
 
   const joinUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}${window.location.pathname}#/join`
+      ? `${window.location.origin}/join`
       : "";
 
   const handleDownloadJoinQR = () => {

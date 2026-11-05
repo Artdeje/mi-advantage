@@ -31,7 +31,7 @@ import ThemeToggle from './ThemeToggle';
 // Public join URL (works with the app's HashRouter). Printed on the common
 // counter QR so shoppers can self-register without any login.
 export function buildJoinUrl(ref?: string): string {
-  const base = `${window.location.origin}${window.location.pathname}#/join`;
+  const base = `${window.location.origin}/join`;
   return ref ? `${base}?ref=${encodeURIComponent(ref)}` : base;
 }
 

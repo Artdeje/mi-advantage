@@ -1,4 +1,5 @@
 import { BrandMonogram, deriveCardBrand } from './MemberCard';
+import { useNavigate } from "react-router-dom";
 import React, { useState, useEffect, useRef } from 'react';
 import {
   db,
@@ -42,6 +43,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   }, []);
   // A logged-in shop gets the full transaction terminal; everyone else (an
   // external phone camera / guest) gets the partner directory after a scan.
+  const navigate = useNavigate();
   const isShopSession = db.currentUser?.role === 'shop';
   // External scanner result: show the partner directory instead of a form.
   const [showPartners, setShowPartners] = useState(false);
@@ -221,11 +223,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   //  - ?card=CUST-0001  → an external QR scanner link authenticates the card
   useEffect(() => {
     const readDeepLink = () => {
-      const h = window.location.hash || '';
-      const qi = h.indexOf('?');
-      if (qi < 0) return;
       try {
-        const params = new URLSearchParams(h.slice(qi + 1));
+        const params = new URLSearchParams(window.location.search || '');
         const card = params.get('card');
         if (card) setPendingCardCode(extractScanCode(card));
         const shop = params.get('shop');
@@ -235,8 +234,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       }
     };
     readDeepLink();
-    window.addEventListener('hashchange', readDeepLink);
-    return () => window.removeEventListener('hashchange', readDeepLink);
+    window.addEventListener('popstate', readDeepLink);
+    return () => window.removeEventListener('popstate', readDeepLink);
   }, []);
 
   useEffect(() => {
@@ -457,7 +456,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       if (shop) {
         if (!isShopSession) {
           // Not logged in as a shop — send to login with email + QR pre-filled.
-          window.location.hash = `/login?shop=${encodeURIComponent(shop.email)}&shopQr=${encodeURIComponent(shop.qr_code)}`;
+          navigate(`/login?shop=${encodeURIComponent(shop.email)}&shopQr=${encodeURIComponent(shop.qr_code)}`);
           return;
         }
         setSelectedShopId(shop.id);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { HashRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { db } from "./lib/supabase";
 import { getSupabase } from "./lib/supabaseClient";
 import { AuthUser, Customization } from "./types";
@@ -128,8 +128,8 @@ function AppContent() {
 
 export default function App() {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <AppContent />
-    </HashRouter>
+    </BrowserRouter>
   );
 }

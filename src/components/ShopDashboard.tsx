@@ -3,6 +3,7 @@ import { db, getCustomerCardBlockReason, getCardScanOutcome, buildShopUrl } from
 import { getSupabase } from '../lib/supabaseClient';
 import { readImageAsDataUrl } from '../lib/imageUtil';
 import { Shop, Sale, Customer, Product, Customization } from '../types';
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
 import ShopCounterQr from './ShopCounterQr';
@@ -22,6 +23,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'products' | 'account'>('dashboard');
+  const navigate = useNavigate();
   // Collapse the tab row behind a "Menu" toggle on small screens.
   const [tabNavOpen, setTabNavOpen] = useState(false);
 
@@ -36,7 +38,8 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
     if (kind === 'valid' && handoffHash) {
       scanVerdictTimer.current = window.setTimeout(() => {
         setScanVerdict(null);
-        location.hash = handoffHash;
+        const path = (handoffHash || '').replace(/^#/, '');
+        navigate(path || '/scan');
       }, 1000);
       return;
     }
@@ -538,7 +541,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
           'valid',
           outcome.message,
           outcome.detail,
-          '#/scan?card=' + encodeURIComponent(customer.qr_code),
+          '/scan?card=' + encodeURIComponent(customer.qr_code),
         );
       } else {
         setScanErrorState(null);
