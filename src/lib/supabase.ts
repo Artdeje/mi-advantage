@@ -1117,7 +1117,7 @@ export class SupabaseDatabaseService {
     opts?: Partial<
       Pick<
         Customer,
-        "customer_type" | "student_id" | "university" | "referee_number"
+        "customer_type" | "student_id" | "university" | "referee_number" | "activation_pin"
       >
     >,
   ): Promise<{ customer: Customer | null; error: string | null }> {
@@ -1136,6 +1136,7 @@ export class SupabaseDatabaseService {
       if (opts?.university !== undefined) updates.university = opts.university;
       if (opts?.referee_number !== undefined)
         updates.referee_number = opts.referee_number;
+      if (opts?.activation_pin) updates.activation_pin = opts.activation_pin;
       if (Object.keys(updates).length > 0) {
         await this.updateCustomer(existing.id, updates);
       }
@@ -1175,7 +1176,11 @@ export class SupabaseDatabaseService {
       newCust.subscription_status = "paid";
     }
     // Activation PIN: 4-digit code for confirming card use in a new session.
-    newCust.activation_pin = String(Math.floor(1000 + Math.random() * 9000));
+    // An admin may set it explicitly; otherwise generate one and surface it in
+    // the success message so it can be handed to the member.
+    newCust.activation_pin =
+      (opts?.activation_pin || "").trim() ||
+      String(Math.floor(1000 + Math.random() * 9000));
 
     try {
       const { error } = await getSupabase()

@@ -55,6 +55,12 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const [pendingPinCustomer, setPendingPinCustomer] = useState<Customer | null>(null);
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  // Why the PIN prompt is open: a shop scan unlocks the discount form, while
+  // (legacy) guest scans only unlock the partner directory.
+  const [pinPurpose, setPinPurpose] = useState<'guest' | 'shop'>('guest');
+  // True once the scanned card's PIN has been verified in this session, so the
+  // operator is not asked for the same PIN twice (scan + apply discount).
+  const [cardPinVerified, setCardPinVerified] = useState(false);
   // Deep link ?shop=SHOP-1234 (from a scanned counter QR) pre-selects the shop.
   const [pendingShopCode, setPendingShopCode] = useState('');
   // Deep link ?card=CUST-0001 (from an external QR scanner) authenticates the card.
@@ -146,25 +152,46 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
 
   const handlePinVerify = () => {
     if (!pendingPinCustomer) return;
-    if (enteredPin === pendingPinCustomer.activation_pin) {
-      setScannedCustomer(pendingPinCustomer);
-      setShowPinPrompt(false);
-      setPendingPinCustomer(null);
-      setEnteredPin('');
-      setPinError(null);
-      setShowPartners(true);
-      showScanPopup('valid', 'Card is valid', 'PIN verified. Browse partner outlets below.');
-      scrollToPartners();
-    } else {
+    if (enteredPin !== pendingPinCustomer.activation_pin) {
       setPinError('Incorrect PIN. Please try again.');
+      return;
     }
-  };
-
-  const handlePinCancel = () => {
+    const verifiedCustomer = pendingPinCustomer;
     setShowPinPrompt(false);
     setPendingPinCustomer(null);
     setEnteredPin('');
     setPinError(null);
+
+    if (pinPurpose === 'shop') {
+      // System/shop scanner: the customer's PIN unlocks the discount form.
+      setScannedCustomer(verifiedCustomer);
+      setScanDone(true);
+      setCardPinVerified(true);
+      showScanPopup('valid', 'Card is valid', 'PIN verified. Continue with the discount form.');
+      scrollToDiscountForm();
+    } else {
+      setScannedCustomer(verifiedCustomer);
+      setShowPartners(true);
+      showScanPopup('valid', 'Card is valid', 'PIN verified. Browse partner outlets below.');
+      scrollToPartners();
+    }
+    setPinPurpose('guest');
+  };
+
+  const handlePinCancel = () => {
+    const wasShopScan = pinPurpose === 'shop';
+    setShowPinPrompt(false);
+    setPendingPinCustomer(null);
+    setEnteredPin('');
+    setPinError(null);
+    setPinPurpose('guest');
+    if (wasShopScan) {
+      // Return the terminal to stage 1 so the next card can be scanned.
+      setScannedCustomer(null);
+      setScanDone(false);
+      setCardPinVerified(false);
+      setShopScanStage('scan');
+    }
   };
 
   const closeScanPopup = (proceed: boolean) => {
@@ -184,6 +211,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     setAmountBefore('');
     setCardOutcome(null);
     setScanErrorState(null);
+    setCardPinVerified(false);
+    setPinPurpose('guest');
   };
 
   // Load registered shops from database.
@@ -302,27 +331,31 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         return;
       }
       setScanErrorState(null);
-      // Only shop sessions authenticate the card to the discount form.
-      // External/guest scans require PIN confirmation before showing partners.
+      // System/shop scanner: a card PIN (when set) gates the discount form.
+      // External/guest scanners always land on the partner directory.
       if (isShopSession) {
-        setScannedCustomer(customer);
-        setScanDone(true);
-        showScanPopup('valid', outcome.message, outcome.detail);
-        scrollToDiscountForm();
-      } else {
-        // External scanner: require activation PIN before showing partners.
         if (customer.activation_pin) {
+          setScannedCustomer(null);
+          setScanDone(false);
+          setCardPinVerified(false);
           setPendingPinCustomer(customer);
+          setPinPurpose('shop');
           setShowPinPrompt(true);
           setEnteredPin('');
           setPinError(null);
         } else {
-          // Legacy cards without PIN: show partners directly.
+          // Legacy cards without a PIN go straight to the form.
           setScannedCustomer(customer);
-          setShowPartners(true);
+          setScanDone(true);
+          setCardPinVerified(false);
           showScanPopup('valid', outcome.message, outcome.detail);
-          scrollToPartners();
+          scrollToDiscountForm();
         }
+      } else {
+        setScannedCustomer(customer);
+        setShowPartners(true);
+        showScanPopup('valid', outcome.message, outcome.detail);
+        scrollToPartners();
       }
     })();
     return () => {
@@ -516,26 +549,33 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         }
 
         setScanErrorState(null);
-        // Only shop sessions authenticate the card to the discount form.
-        // External/guest scans show partner directory only (no form auth).
-        if (isShopSession) {
-          setScannedCustomer(customer);
-          setScanDone(true);
-        }
         await stopCameraScanner();
-        // Verdict popup handles the navigation itself (direct auth): the
-        // terminal form (shop) or the partner directory (guest) mounts right
-        // away while the toast confirms the verdict.
-        // For external/guest scans with a PIN, require PIN verification first.
-        if (!isShopSession && customer.activation_pin) {
-          setPendingPinCustomer(customer);
-          setShowPinPrompt(true);
-          setEnteredPin('');
-          setPinError(null);
+        if (isShopSession) {
+          // System/shop scanner: ask for the customer's card PIN (when one is
+          // set) before revealing the pre-filled discount form.
+          if (customer.activation_pin) {
+            setScannedCustomer(null);
+            setScanDone(false);
+            setCardPinVerified(false);
+            setPendingPinCustomer(customer);
+            setPinPurpose('shop');
+            setShowPinPrompt(true);
+            setEnteredPin('');
+            setPinError(null);
+          } else {
+            // Legacy cards without a PIN go straight to the form.
+            setScannedCustomer(customer);
+            setScanDone(true);
+            setCardPinVerified(false);
+            showScanPopup('valid', outcome.message, outcome.detail);
+            scrollToDiscountForm();
+          }
         } else {
+          // External/guest scanner: partner directory only, no form auth.
+          setScannedCustomer(customer);
+          setShowPartners(true);
           showScanPopup('valid', outcome.message, outcome.detail);
-          if (isShopSession) scrollToDiscountForm();
-          else setShowPartners(true);
+          scrollToPartners();
         }
       } else {
         setScanErrorState(null);
@@ -578,8 +618,9 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     e.preventDefault();
     if (!scannedCustomer) return;
 
-    // If card has an activation PIN, require verification before applying discount.
-    if (scannedCustomer.activation_pin && !showDiscountPinPrompt) {
+    // If the card has an activation PIN and it was not already verified at
+    // scan time (e.g. a legacy deep link), require it before applying discount.
+    if (scannedCustomer.activation_pin && !cardPinVerified && !showDiscountPinPrompt) {
       setShowDiscountPinPrompt(true);
       setDiscountPin('');
       setDiscountPinError(null);
@@ -587,7 +628,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     }
 
     // Verify PIN if prompt was shown
-    if (scannedCustomer.activation_pin && showDiscountPinPrompt) {
+    if (scannedCustomer.activation_pin && !cardPinVerified && showDiscountPinPrompt) {
       if (discountPin !== scannedCustomer.activation_pin) {
         setDiscountPinError('Incorrect PIN. Please try again.');
         return;
@@ -596,6 +637,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       setShowDiscountPinPrompt(false);
       setDiscountPin('');
       setDiscountPinError(null);
+      setCardPinVerified(true);
     }
 
     await executeTransaction();
@@ -637,6 +679,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         setScanDone(false);
         setAmountBefore('');
         setScanErrorState(null);
+        setCardPinVerified(false);
+        setPinPurpose('guest');
 
         if (onNewSale) onNewSale();
         // Back to the scanner card for the next member — a full data reload
@@ -653,7 +697,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     }
   };
 
-// --- Activation PIN Prompt (external scanner) ---
+// --- Card PIN Prompt (system/shop scanner) ---
   if (showPinPrompt && pendingPinCustomer) {
     return (
       <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 flex items-center justify-center p-4">
@@ -662,9 +706,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
             <div className="w-14 h-14 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-3">
               <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             </div>
-            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Activation PIN Required</h2>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Customer PIN Required</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Enter the 4-digit PIN for card <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{pendingPinCustomer.qr_code}</span>
+              Ask the customer for the 4-digit PIN of card{' '}
+              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{pendingPinCustomer.qr_code}</span>{' '}
+              to open the discount form.
             </p>
           </div>
           <div className="space-y-4">
@@ -913,7 +959,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
             <div className="flex justify-end">
               <button
                 type="button"
-                onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); }}
+                onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); setCardPinVerified(false); setPinPurpose('guest'); }}
                 className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-700"
               >
                 Scan another

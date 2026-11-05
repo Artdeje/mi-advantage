@@ -180,6 +180,7 @@ export default function AdminDashboard({
   });
   const [custValidTime, setCustValidTime] = useState("");
   const [custReferee, setCustReferee] = useState("");
+  const [custPin, setCustPin] = useState("");
   const [custMsg, setCustMsg] = useState("");
 
   // Filtering & Sorting for Customer Cards
@@ -507,6 +508,10 @@ export default function AdminDashboard({
       setCustMsg("Please enter the customer name and phone number.");
       return;
     }
+    if (custPin && !/^\d{4}$/.test(custPin)) {
+      setCustMsg("Card PIN must be exactly 4 digits.");
+      return;
+    }
     // All customers are general members (no student type).
 
     // Secure referee validation: format, existence, and no self-referrals.
@@ -552,6 +557,7 @@ export default function AdminDashboard({
           student_id: "",
           university: "",
           referee_number: refereeCode,
+          ...(custPin ? { activation_pin: custPin } : {}),
         });
         if (error) {
           setCustMsg(error);
@@ -572,6 +578,7 @@ export default function AdminDashboard({
             student_id: "",
             university: "",
             referee_number: refereeCode,
+            activation_pin: custPin || undefined,
           },
         );
         if (error) {
@@ -580,7 +587,7 @@ export default function AdminDashboard({
           resetCustomerForm();
           await loadData();
           flashCardListMsg(
-            `Customer registered successfully! Created QR card code: ${customer.qr_code}`,
+            `Customer registered successfully! Card ${customer.qr_code} — PIN ${customer.activation_pin || "(not set)"}. Share this PIN with the member; the shop asks for it before applying a discount.`,
           );
         }
       }
@@ -594,6 +601,7 @@ export default function AdminDashboard({
     setCustName("");
     setCustEmail("");
     setCustPhone("");
+    setCustPin("");
     const d = new Date();
     d.setMonth(d.getMonth() + 3);
     setCustValidUntil(d.toISOString().split("T")[0]);
@@ -609,6 +617,7 @@ export default function AdminDashboard({
     setCustEmail(c.email || "");
     setCustPhone(c.phone);
     setCustReferee(c.referee_number || "");
+    setCustPin(c.activation_pin || "");
     setCardModalOpen(true);
     if (c.valid_until) {
       if (c.valid_until.includes("T")) {
@@ -2376,6 +2385,25 @@ export default function AdminDashboard({
                   <p className="text-[10px] text-slate-400 mt-1">
                     Cards without an email are still valid &mdash; the phone number
                     identifies the member.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">
+                    Card PIN{" "}
+                    <span className="text-slate-400 normal-case">(4 digits, optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    placeholder={isEditingCustomer ? "Leave blank to keep current PIN" : "Leave blank to auto-generate"}
+                    value={custPin}
+                    onChange={(e) => setCustPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-semibold font-mono tracking-widest"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    The shop asks the member for this PIN before opening the discount form.
                   </p>
                 </div>
 
