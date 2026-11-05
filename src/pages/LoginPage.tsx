@@ -79,7 +79,7 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
           // Full-page redirect into the clean scanner path — the freshly
           // stored session mounts the shop terminal directly.
           window.location.replace(
-            `${window.location.origin}/scan?shop=${encodeURIComponent(shopQrParam)}&entrance=${Date.now()}`
+            `${window.location.origin}/scan?shop=${encodeURIComponent(shopQrParam)}&terminal=1&entrance=${Date.now()}`
           );
           return;
         }
@@ -109,7 +109,7 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
             if (loginResult.user) {
               if (shopQrParam && loginResult.user.role === "shop") {
                 window.location.replace(
-                  `${window.location.origin}/scan?shop=${encodeURIComponent(shopQrParam)}&entrance=${Date.now()}`
+                  `${window.location.origin}/scan?shop=${encodeURIComponent(shopQrParam)}&terminal=1&entrance=${Date.now()}`
                 );
                 return;
               }

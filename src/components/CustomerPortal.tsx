@@ -41,10 +41,29 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       })
       .catch(() => setCardBrand('MA'));
   }, []);
-  // A logged-in shop gets the full transaction terminal; everyone else (an
-  // external phone camera / guest) gets the partner directory after a scan.
+  // A logged-in shop gets the full transaction terminal only when it entered
+  // through the service terminal:
+  //   /scan?card=…&terminal=1   (shop dashboard hand-off)
+  //   /scan?shop=…&terminal=1   (shop counter QR login)
+  // A plain /scan?card=… link is what a phone camera opens when a MEMBER card
+  // is scanned externally — it must always show the partner directory, even if
+  // that phone happens to have a shop session stored from an earlier login.
+  const readEntryMode = () => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      return {
+        terminal: params.get('terminal') === '1',
+        externalCard: params.has('card'),
+      };
+    } catch {
+      return { terminal: false, externalCard: false };
+    }
+  };
   const navigate = useNavigate();
-  const isShopSession = db.currentUser?.role === 'shop';
+  const [entryMode, setEntryMode] = useState(readEntryMode);
+  const isShopSession =
+    db.currentUser?.role === 'shop' &&
+    (!entryMode.externalCard || entryMode.terminal);
   // External scanner result: show the partner directory instead of a form.
   const [showPartners, setShowPartners] = useState(false);
   // Activation PIN prompt for external scanner scans.
@@ -225,10 +244,10 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       const approvedShops = shopList.filter((s) => !s.status || s.status === 'approved');
       setShops(approvedShops);
       if (approvedShops.length > 0) {
-        if (db.currentUser?.role === 'shop') {
+        if (isShopSession) {
           // Logged-in partner: the form starts on its OWN outlet — never on
           // the first row of the list (a ?shop= deep link can still override).
-          const ownId = db.currentUser.id || db.currentUser.shop_id || '';
+          const ownId = db.currentUser?.id || db.currentUser?.shop_id || '';
           const own = ownId ? approvedShops.find((s) => s.id === ownId) : null;
           if (own) {
             setSelectedShopId(own.id);
@@ -253,6 +272,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   useEffect(() => {
     const readDeepLink = () => {
       try {
+        setEntryMode(readEntryMode());
         const params = new URLSearchParams(window.location.search || '');
         const card = params.get('card');
         if (card) setPendingCardCode(extractScanCode(card));
