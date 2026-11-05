@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { db } from "./lib/supabase";
 import { getSupabase } from "./lib/supabaseClient";
 import { AuthUser, Customization } from "./types";
@@ -12,6 +12,11 @@ import CustomerPortal from "./components/CustomerPortal";
 import SelfRegistrationPage from "./components/SelfRegistrationPage";
 import WelcomePage from "./components/WelcomePage";
 import { applyTheme, getInitialTheme } from "./lib/theme";
+
+function AuthRedirect() {
+  const location = useLocation();
+  return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+}
 
 function AppContent() {
   const navigate = useNavigate();
@@ -61,9 +66,9 @@ function AppContent() {
 
   useEffect(() => { if (authChecked) loadBranding(); }, [loadBranding, authChecked]);
 
-  const handleLoginSuccess = (role: "admin" | "shop") => {
+  const handleLoginSuccess = (role: "admin" | "shop", redirect?: string) => {
     setCurrentUser(db.currentUser);
-    navigate("/dashboard");
+    navigate(redirect || "/dashboard");
   };
 
   const handleLogout = async () => {
@@ -93,7 +98,7 @@ function AppContent() {
         <Route path="/login" element={<LoginPage onLoginSuccess={handleLoginSuccess} />} />
         <Route path="/register" element={<RegisterPage onRegistered={() => navigate("/login")} />} />
         <Route path="/register-shop" element={<ShopRegistrationPage onRegistered={() => navigate("/login")} />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<AuthRedirect />} />
       </Routes>
     );
   }

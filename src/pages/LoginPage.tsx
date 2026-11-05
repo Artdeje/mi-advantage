@@ -5,7 +5,7 @@ import { Lock as LockIcon, Mail as MailIcon, Eye as EyeIcon, EyeOff as EyeOffIco
 import ThemeToggle from "../components/ThemeToggle";
 import { useSearchParams } from "react-router-dom";
 
-export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "admin" | "shop") => void }) {
+export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "admin" | "shop", redirect?: string) => void }) {
   const [searchParams] = useSearchParams();
   const [cust, setCust] = useState<Customization | null>(null);
   const [emailInput, setEmailInput] = useState("");
@@ -83,7 +83,7 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
           );
           return;
         }
-        onLoginSuccess(result.user.role as "admin" | "shop");
+        onLoginSuccess(result.user.role as "admin" | "shop", searchParams.get("redirect") || undefined);
       }
     } catch {
       setLoginError("Auth connection error. Please try again.");
