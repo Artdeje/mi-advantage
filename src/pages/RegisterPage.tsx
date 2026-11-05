@@ -89,7 +89,7 @@ export default function RegisterPage({ onRegistered }: { onRegistered: () => voi
         {success && !showVerify && <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400 p-3 rounded-xl text-xs text-center">{success}</div>}
         {success && showVerify && !verifyError && <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400 p-3 rounded-xl text-xs text-center">{success}</div>}
 
-        <div className="text-center text-xs"><a href="#/login" className="text-slate-500 dark:text-slate-400 hover:text-purple-700 dark:hover:text-purple-300 font-bold cursor-pointer">Already have an account? Sign in</a></div>
+        <div className="text-center text-xs"><a href="/login" className="text-slate-500 dark:text-slate-400 hover:text-purple-700 dark:hover:text-purple-300 font-bold cursor-pointer">Already have an account? Sign in</a></div>
       </div>
     </div>
   );

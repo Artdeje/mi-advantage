@@ -85,7 +85,7 @@ export default function WelcomePage() {
       {/* NAV BAR */}
       <header className="relative z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 sticky top-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-          <a href="#/" className="flex items-center gap-2.5 min-w-0 shrink-0" onClick={() => setMenuOpen(false)}>
+          <a href="/" className="flex items-center gap-2.5 min-w-0 shrink-0" onClick={() => setMenuOpen(false)}>
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="h-8 w-auto object-contain" />
             ) : (
@@ -112,7 +112,7 @@ export default function WelcomePage() {
           <nav className="hidden md:flex items-center gap-2">
             <ThemeToggle />
             <a
-              href="#/scan"
+              href="/scan"
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
             >
               <Camera className="w-4 h-4" />
@@ -120,7 +120,7 @@ export default function WelcomePage() {
               <span className="sm:hidden">Scan</span>
             </a>
             <a
-              href="#/login"
+              href="/login"
               className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
             >
               <LogIn className="w-4 h-4" />
@@ -147,11 +147,11 @@ export default function WelcomePage() {
         {menuOpen && (
           <nav className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
             <div className="px-4 py-3 flex flex-col gap-1.5">
-              <a href="#/scan" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
+              <a href="/scan" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
                 <Camera className="w-4 h-4" />
                 Card Scan
               </a>
-              <a href="#/login" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
+              <a href="/login" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
                 <LogIn className="w-4 h-4" />
                 Sign In
               </a>
@@ -195,7 +195,7 @@ export default function WelcomePage() {
           <p className="text-xs text-slate-500 dark:text-slate-400 text-center sm:text-left">{footerText}</p>
           <div className="flex items-center gap-3">
             <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{footerSubtext}</span>
-            <a href="#/login" className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider hover:underline">
+            <a href="/login" className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider hover:underline">
               Admin / Shop Login
             </a>
           </div>

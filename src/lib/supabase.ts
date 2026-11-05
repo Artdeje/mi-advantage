@@ -98,7 +98,7 @@ export function extractScanCode(raw: string): string {
 // Deep link encoded into a shop counter QR — the staff entrance. Scanning it
 // opens the sign-in screen with the company email pre-filled (only the
 // password is typed), then lands in the company scanner with the outlet
-// pre-selected. The direct #/scan?shop=<code> deep link stays available for
+// pre-selected. The direct /scan?shop=<code> deep link stays available for
 // the public terminal form.
 export function buildShopUrl(shop: { qr_code?: string | null; id?: string; email: string }): string {
   const code = (shop.qr_code || shop.id || "").trim();

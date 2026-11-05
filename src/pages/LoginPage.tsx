@@ -76,10 +76,10 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
         // redirect into the scanner — the freshly stored session mounts the
         // shop terminal directly and a transient SPA redirect cannot race it.
         if (shopQrParam && result.user.role === "shop") {
+          // Full-page redirect into the clean scanner path — the freshly
+          // stored session mounts the shop terminal directly.
           window.location.replace(
-            window.location.pathname +
-              "?entrance=" + Date.now() +
-              "#/scan?shop=" + encodeURIComponent(shopQrParam)
+            `${window.location.origin}/scan?shop=${encodeURIComponent(shopQrParam)}&entrance=${Date.now()}`
           );
           return;
         }
@@ -109,13 +109,14 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
             if (loginResult.user) {
               if (shopQrParam && loginResult.user.role === "shop") {
                 window.location.replace(
-                  window.location.pathname +
-                    "?entrance=" + Date.now() +
-                    "#/scan?shop=" + encodeURIComponent(shopQrParam)
+                  `${window.location.origin}/scan?shop=${encodeURIComponent(shopQrParam)}&entrance=${Date.now()}`
                 );
                 return;
               }
-              onLoginSuccess(loginResult.user.role as "admin" | "shop");
+              onLoginSuccess(
+                loginResult.user.role as "admin" | "shop",
+                searchParams.get("redirect") || undefined
+              );
             } else if (loginResult.error) {
               setOtpError(loginResult.error);
               setShowOtpVerify(false);
@@ -348,7 +349,7 @@ export default function LoginPage({ onLoginSuccess }: { onLoginSuccess: (role: "
         <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3 text-center text-xs">
           <p className="text-slate-500 dark:text-slate-400">Don't have an account?</p>
           <div className="flex flex-col sm:flex-row gap-2">
-            <a href="#/register" className="flex-1 py-2 px-4 border border-purple-200 dark:border-purple-900 text-purple-700 dark:text-purple-300 rounded-xl font-semibold hover:bg-purple-50 dark:hover:bg-purple-900/40 transition-colors">Create Admin Account</a>
+            <a href="/register" className="flex-1 py-2 px-4 border border-purple-200 dark:border-purple-900 text-purple-700 dark:text-purple-300 rounded-xl font-semibold hover:bg-purple-50 dark:hover:bg-purple-900/40 transition-colors">Create Admin Account</a>
           </div>
         </div>
 

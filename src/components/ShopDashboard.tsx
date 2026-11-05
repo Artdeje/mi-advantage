@@ -532,7 +532,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
         setScannedCustomer(customer);
         setScanDone(true);
         // Verdict popup, then hand the operator off to the dedicated scan
-        // terminal page ("/#/scan?card=…"), which mounts the discount form
+        // terminal page ("/scan?card=…"), which mounts the discount form
         // pre-filled with this card (same deep-link flow as the uploader).
         const simInput = document.getElementById('shop-simulator-scan-input') as HTMLInputElement | null;
         if (simInput) simInput.value = '';

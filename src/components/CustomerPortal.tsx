@@ -755,12 +755,12 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Top nav */}
         <div className="flex items-center justify-between gap-3">
-          <a href="#/" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
+          <a href="/" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
             <BrandMonogram brand={cardBrand} className="w-8 h-8 rounded-lg text-xs" />
             <span>Home</span>
           </a>
           <div className="flex items-center gap-2">
-            <a href="#/login" className="px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all">
+            <a href="/login" className="px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all">
               Partner Login
             </a>
             <ThemeToggle />

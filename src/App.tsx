@@ -13,6 +13,27 @@ import SelfRegistrationPage from "./components/SelfRegistrationPage";
 import WelcomePage from "./components/WelcomePage";
 import { applyTheme, getInitialTheme } from "./lib/theme";
 
+// Legacy cards and counter QRs still encode HashRouter URLs
+// (e.g. https://…/#/scan?card=CUST-001). Rewrite them to clean BrowserRouter
+// paths before the router reads the location, so already-printed QRs keep
+// working on every device.
+function normalizeLegacyHashUrl() {
+  if (typeof window === "undefined") return;
+  const hash = window.location.hash || "";
+  if (!hash.startsWith("#/")) return;
+  const target = hash.slice(1);
+  const q = target.indexOf("?");
+  const pathname = q === -1 ? target : target.slice(0, q);
+  const search = q === -1 ? "" : target.slice(q);
+  const base = window.location.pathname.replace(/\/+$/, "");
+  window.history.replaceState(null, "", (base || "") + pathname + search);
+}
+
+normalizeLegacyHashUrl();
+// Also normalize a legacy link pasted into an already-open tab (hash-only
+// navigation does not reload the app).
+window.addEventListener("hashchange", normalizeLegacyHashUrl);
+
 function AuthRedirect() {
   const location = useLocation();
   return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`} replace />;

@@ -298,15 +298,15 @@ export default function SelfRegistrationPage() {
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Top nav */}
         <div className="flex items-center justify-between gap-3">
-          <a href="#/" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
+          <a href="/" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors">
             <BrandMonogram brand={cardBrand} className="w-8 h-8 rounded-lg text-xs" />
             <span>Home</span>
           </a>
           <div className="flex items-center gap-2">
-            <a href="#/scan" className="px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all">
+            <a href="/scan" className="px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all">
               Scan &amp; Shop
             </a>
-            <a href="#/login" className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all">
+            <a href="/login" className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all">
               Partner Login
             </a>
             <ThemeToggle />
@@ -633,7 +633,7 @@ export default function SelfRegistrationPage() {
                     <p className="font-bold text-slate-700 dark:text-slate-200">{detailShop.created_at ? new Date(detailShop.created_at).toLocaleDateString() : '—'}</p>
                   </div>
                 </div>
-                <a href="#/scan" className="block text-center py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider">
+                <a href="/scan" className="block text-center py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider">
                   Shop with my card
                 </a>
               </div>

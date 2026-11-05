@@ -259,7 +259,7 @@ export default function ShopRegistrationPage({ onRegistered }: { onRegistered: (
         {success && step === "verify" && <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300 p-3 rounded-xl text-xs text-center">{success}</div>}
 
         <div className="text-center text-xs">
-          <a href="#/login" className="text-slate-500 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold cursor-pointer">
+          <a href="/login" className="text-slate-500 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold cursor-pointer">
             Already registered? Sign in
           </a>
         </div>
