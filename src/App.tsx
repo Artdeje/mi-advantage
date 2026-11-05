@@ -39,8 +39,22 @@ function AuthRedirect() {
   return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`} replace />;
 }
 
+// Public pages must never wait for session validation: a customer scanning a
+// card (or a shop opening its counter QR) can land here while the server is
+// still cold-starting, and a "Verifying session..." spinner looks like a
+// broken page. Only protected routes gate on the session check.
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/scan",
+  "/join",
+  "/login",
+  "/register",
+  "/register-shop",
+]);
+
 function AppContent() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(db.currentUser);
   const [customization, setCustomization] = useState<Customization | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -98,7 +112,32 @@ function AppContent() {
     navigate("/login");
   };
 
-  // Wait for session validation before rendering
+  // Render public pages immediately — no session gate. This keeps /scan,
+  // /join and the shop QR login usable even on a cold production start.
+  if (PUBLIC_PATHS.has(location.pathname)) {
+    return (
+      <Routes>
+        <Route path="/" element={<WelcomePage />} />
+        <Route path="/scan" element={<CustomerPortal />} />
+        <Route path="/join" element={<SelfRegistrationPage />} />
+        <Route
+          path="/login"
+          element={
+            currentUser ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <LoginPage onLoginSuccess={handleLoginSuccess} />
+            )
+          }
+        />
+        <Route path="/register" element={<RegisterPage onRegistered={() => navigate("/login")} />} />
+        <Route path="/register-shop" element={<ShopRegistrationPage onRegistered={() => navigate("/login")} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
+
+  // Wait for session validation before rendering protected pages
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
