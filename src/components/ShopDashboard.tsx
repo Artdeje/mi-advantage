@@ -3,7 +3,6 @@ import { db, getCustomerCardBlockReason, getCardScanOutcome, buildShopUrl } from
 import { getSupabase } from '../lib/supabaseClient';
 import { readImageAsDataUrl } from '../lib/imageUtil';
 import { Shop, Sale, Customer, Product, Customization } from '../types';
-import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
 import ShopCounterQr from './ShopCounterQr';
@@ -23,30 +22,20 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'sales' | 'products' | 'account'>('dashboard');
-  const navigate = useNavigate();
   // Collapse the tab row behind a "Menu" toggle on small screens.
   const [tabNavOpen, setTabNavOpen] = useState(false);
 
-  // Scan verdict popup — same playbook as the /scan terminal: blocked verdicts
-  // carry animated warning lights and never navigate; valid scans hand off to
-  // the dedicated scan terminal page with the card auto-filled.
+  // Scan verdict popup — blocked verdicts carry animated warning lights and
+  // never navigate; a valid scan fills the dashboard form in place.
   const [scanVerdict, setScanVerdict] = useState<null | { kind: 'valid' | 'invalid' | 'renew'; message: string; detail: string }>(null);
   const scanVerdictTimer = useRef<number | null>(null);
-  const showScanVerdict = (kind: 'valid' | 'invalid' | 'renew', message: string, detail: string, handoffHash?: string) => {
+  const showScanVerdict = (kind: 'valid' | 'invalid' | 'renew', message: string, detail: string) => {
     if (scanVerdictTimer.current) window.clearTimeout(scanVerdictTimer.current);
     setScanVerdict({ kind, message, detail });
-    if (kind === 'valid' && handoffHash) {
-      scanVerdictTimer.current = window.setTimeout(() => {
-        setScanVerdict(null);
-        const path = (handoffHash || '').replace(/^#/, '');
-        navigate(path || '/scan');
-      }, 1000);
-      return;
-    }
     scanVerdictTimer.current = window.setTimeout(() => {
       setScanVerdict(null);
       scanVerdictTimer.current = null;
-    }, 3600);
+    }, kind === 'valid' ? 1200 : 3600);
   };
 
   // Scan panel visibility — the scanner lives behind the "Scan Card" button,
@@ -80,6 +69,12 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [scannerError, setScannerError] = useState<string | null>(null);
+  // Customer PIN gate for the INTERNAL scanner: a card that carries an
+  // activation PIN must be confirmed before its details are allowed to fill
+  // the transaction form. External camera scans never reach this state.
+  const [pendingPinCustomer, setPendingPinCustomer] = useState<Customer | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
   
   // Ref for scanner
   const qrCodeInstanceRef = useRef<Html5Qrcode | null>(null);
@@ -510,6 +505,45 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
     setScanModalOpen(false);
   };
 
+  // Internal scanner success: keep the operator on the dashboard and fill the
+  // transaction form in place (no page jump, no second lookup on another page).
+  const finishShopScan = async (
+    customer: Customer,
+    outcome: { message: string; detail: string },
+  ) => {
+    setScannedCustomer(customer);
+    setScanDone(true);
+    setScanErrorState(null);
+    setPendingPinCustomer(null);
+    setPinInput('');
+    setPinError(null);
+    const simInput = document.getElementById('shop-simulator-scan-input') as HTMLInputElement | null;
+    if (simInput) simInput.value = '';
+    await closeScanModal();
+    setScanOpen(true);
+    showScanVerdict('valid', outcome.message, outcome.detail);
+    scrollToDiscountForm();
+  };
+
+  const handleShopPinVerify = async () => {
+    if (!pendingPinCustomer) return;
+    const expected = (pendingPinCustomer.activation_pin || '').trim();
+    if (pinInput.trim() !== expected) {
+      setPinError('Incorrect PIN. Please try again.');
+      return;
+    }
+    await finishShopScan(pendingPinCustomer, getCardScanOutcome(pendingPinCustomer));
+  };
+
+  const cancelShopPin = () => {
+    // Back to the scanner step; the camera was stopped when the PIN step opened.
+    setPendingPinCustomer(null);
+    setPinInput('');
+    setPinError(null);
+    const simInput = document.getElementById('shop-simulator-scan-input') as HTMLInputElement | null;
+    if (simInput) simInput.value = '';
+  };
+
   const handleDecodedQR = async (code: string) => {
     // Ignore repeat frames for a card we are already resolving.
     if (scanLockRef.current) return;
@@ -529,20 +563,19 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
           return;
         }
         setScanErrorState(null);
-        setScannedCustomer(customer);
-        setScanDone(true);
-        // Verdict popup, then hand the operator off to the dedicated scan
-        // terminal page ("/scan?card=…&terminal=1"), which mounts the discount
-        // form pre-filled with this card (same deep-link flow as the uploader).
-        const simInput = document.getElementById('shop-simulator-scan-input') as HTMLInputElement | null;
-        if (simInput) simInput.value = '';
-        await stopCamera();
-        showScanVerdict(
-          'valid',
-          outcome.message,
-          outcome.detail,
-          '/scan?card=' + encodeURIComponent(customer.qr_code) + '&terminal=1',
-        );
+        // PIN-protected card: stop the camera (so it cannot re-fire) and ask
+        // for the customer's 4-digit code before filling the form.
+        if (customer.activation_pin) {
+          await stopCamera();
+          setScannedCustomer(null);
+          setScanDone(false);
+          setPendingPinCustomer(customer);
+          setPinInput('');
+          setPinError(null);
+          return;
+        }
+        // Legacy cards without a PIN fill the form immediately.
+        await finishShopScan(customer, outcome);
       } else {
         setScanErrorState(null);
         // Unknown card: verdict popup ONLY — never navigates anywhere.
@@ -1193,7 +1226,65 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
               </div>
             </div>
             )}
-            {/* Scan verdict popup — valid cards hand off to the scan terminal;
+            {/* Internal scanner PIN gate — shown after a valid scan of a
+                PIN-protected card, before the form is filled in place. */}
+            {pendingPinCustomer && (
+              <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[65]">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+                  <div className="text-center">
+                    <div className="w-14 h-14 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-3">
+                      <Lock className="w-7 h-7" />
+                    </div>
+                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Customer PIN Required</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                      Ask the customer for the 4-digit PIN of card{' '}
+                      <span className="font-mono font-bold">{pendingPinCustomer.qr_code}</span> to fill the discount form.
+                    </p>
+                  </div>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleShopPinVerify();
+                    }}
+                    className="space-y-3"
+                  >
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoFocus
+                      maxLength={4}
+                      value={pinInput}
+                      onChange={(e) => {
+                        setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4));
+                        setPinError(null);
+                      }}
+                      placeholder="••••"
+                      className="w-full text-center tracking-[0.6em] text-2xl font-black px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    {pinError && (
+                      <p className="text-xs font-semibold text-red-600 dark:text-red-400 text-center">{pinError}</p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelShopPin}
+                        className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={pinInput.length !== 4}
+                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        Verify PIN
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+            {/* Scan verdict popup — valid scans fill the form in place;
                 blocked / unknown cards stay put with animated warning lights. */}
             {scanVerdict && (
               <div
@@ -1253,7 +1344,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
                           : 'bg-red-600 hover:bg-red-700'
                     }`}
                   >
-                    {scanVerdict.kind === 'valid' ? 'Continue to terminal' : 'Scan again'}
+                    {scanVerdict.kind === 'valid' ? 'Continue to form' : 'Scan again'}
                   </button>
                 </div>
               </div>
