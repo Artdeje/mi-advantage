@@ -114,7 +114,14 @@ function AppContent() {
 
   // Render public pages immediately — no session gate. This keeps /scan,
   // /join and the shop QR login usable even on a cold production start.
-  if (PUBLIC_PATHS.has(location.pathname)) {
+  // Camera apps and chat previews sometimes add a trailing slash or open
+  // /index.html; normalize those so a scanned card still hits the public page
+  // instead of falling through to the auth redirect.
+  const requestPath = (() => {
+    const p = location.pathname.replace(/\/+$/, "") || "/";
+    return p === "/index.html" ? "/" : p;
+  })();
+  if (PUBLIC_PATHS.has(requestPath)) {
     return (
       <Routes>
         <Route path="/" element={<WelcomePage />} />
