@@ -28,6 +28,9 @@ import { Html5Qrcode } from 'html5-qrcode';
 export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }) {
   // Database states
   const [shops, setShops] = useState<Shop[]>([]);
+  // Partner list loading state so an external scan never shows "no partners"
+  // for the few hundred ms the directory takes to arrive.
+  const [shopsLoaded, setShopsLoaded] = useState(false);
   const [selectedShopId, setSelectedShopId] = useState('');
   // Card branding (system logo follows the same monogram as the printed card)
   const [cardBrand, setCardBrand] = useState('MA');
@@ -64,8 +67,15 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const isShopSession =
     db.currentUser?.role === 'shop' &&
     (!entryMode.externalCard || entryMode.terminal);
-  // External scanner result: show the partner directory instead of a form.
-  const [showPartners, setShowPartners] = useState(false);
+  // A plain ?card= deep link is an external scanner (a phone camera), i.e. a
+  // MEMBER view: the partner directory is the destination. Paint it right away
+  // and verify the card in the background, otherwise the shop terminal form
+  // flashes for the whole duration of the lookup (seconds on a cold start).
+  const isExternalCardEntry = entryMode.externalCard && !entryMode.terminal;
+  const [showPartners, setShowPartners] = useState(isExternalCardEntry);
+  // True while the external card lookup is still in flight; the partner page
+  // shows a "checking member card" banner instead of the terminal form.
+  const [verifyingExternalCard, setVerifyingExternalCard] = useState(isExternalCardEntry);
   // Activation PIN prompt for external scanner scans.
   const [showPinPrompt, setShowPinPrompt] = useState(false);
   const [showDiscountPinPrompt, setShowDiscountPinPrompt] = useState(false);
@@ -104,6 +114,12 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     detail: string;
   } | null>(null);
   const scanPopupTimer = useRef<number | null>(null);
+
+  // The partner directory replaces the terminal whenever an external card
+  // link is in play — including while its lookup is still running — so the
+  // shop form never flashes before the member result.
+  const partnersPageVisible =
+    showPartners && (scannedCustomer !== null || verifyingExternalCard || isExternalCardEntry);
 
   // Scanned shop state — a shop QR fills the discount form automatically,
   // so the operator never has to choose the shop from the dropdown.
@@ -259,6 +275,8 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       }
     } catch (err) {
       console.error('Failed to load portal data:', err);
+    } finally {
+      setShopsLoaded(true);
     }
   };
 
@@ -320,6 +338,9 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       const customer = await db.getCustomerByQRCode(pendingCardCode);
       if (cancelled) return;
       setPendingCardCode('');
+      // The partner page is already on screen; drop its "checking" banner now
+      // that the verdict is known.
+      setVerifyingExternalCard(false);
       if (!customer) {
         // Unknown card: verdict popup ONLY — no authentication to any page.
         setCardOutcome({
@@ -836,7 +857,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm space-y-8" id="home-transaction-portal">
       
       {/* Title Header - hidden once a member is verified (decluttered result view) */}
-      {!(showPartners && scannedCustomer) && (
+      {!partnersPageVisible && (
       <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-5">
         <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900 shadow-sm">
           <QrCode className="w-6 h-6" />
@@ -850,6 +871,28 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
           </p>
         </div>
       </div>
+      )}
+
+      {/* External card link: the partner page is already on screen while the
+          member lookup runs, so the terminal form never flashes first. */}
+      {verifyingExternalCard && (
+        <div
+          id="card-verifying-banner"
+          role="status"
+          className="flex items-center gap-3 rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 p-4"
+        >
+          <span className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+            <RefreshCw className="w-5 h-5 animate-spin" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+              Checking member card
+            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+              Loading your member benefits and partner outlets…
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Card validation outcome: "Card is valid" / "Renew subscription" */}
@@ -961,7 +1004,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                     : 'bg-red-600 hover:bg-red-700'
               }`}
             >
-              {scanPopup.kind === 'valid' ? 'Open discount form' : 'Scan again'}
+              {scanPopup.kind === 'valid'
+                ? isShopSession
+                  ? 'Open discount form'
+                  : 'Continue to partners'
+                : 'Scan again'}
             </button>
             <p className="text-[10px] font-semibold text-slate-400 mt-2 uppercase tracking-widest">
               {scanPopup.kind === 'valid'
@@ -972,7 +1019,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
         </div>
       )}
 
-      {showPartners && scannedCustomer ? (
+      {partnersPageVisible ? (
           <>
           <div id="member-partners-panel" className="space-y-6 scroll-mt-6">
             {/* Scan another (replaces the removed verified-member banner) */}
@@ -997,7 +1044,9 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                   <p className="text-xs text-slate-500 dark:text-slate-400">Show this card at any partner counter to redeem.</p>
                 </div>
               </div>
-              {shops.length === 0 ? (
+              {!shopsLoaded ? (
+                <p className="text-xs text-slate-400 py-6 text-center">Loading partner outlets…</p>
+              ) : shops.length === 0 ? (
                 <p className="text-xs text-slate-400 py-6 text-center">No partner shops yet — check back soon.</p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1106,7 +1155,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
                     </div>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Show this member card ({scannedCustomer?.qr_code}) at their counter to redeem.
+                    Show this member card{scannedCustomer ? ` (${scannedCustomer.qr_code})` : ''} at their counter to redeem.
                   </p>
                 </div>
               </div>
