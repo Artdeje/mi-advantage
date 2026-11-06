@@ -54,9 +54,13 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   const readEntryMode = () => {
     try {
       const params = new URLSearchParams(window.location.search || '');
+      // An empty ?card= (broken QR / stripped query) is not a member-card
+      // deep link: treating it as one would leave the partner page stuck on
+      // its "checking" banner because there is nothing to look up.
+      const card = (params.get('card') || '').trim();
       return {
         terminal: params.get('terminal') === '1',
-        externalCard: params.has('card'),
+        externalCard: card.length > 0,
       };
     } catch {
       return { terminal: false, externalCard: false };
