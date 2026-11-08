@@ -117,13 +117,6 @@ export interface Customization {
   // Landing page background
   home_background_type?: 'none' | 'image' | 'gradient';
   home_background_value?: string;
-  // Feature strip (editable landing page content)
-  feature1_title?: string;
-  feature1_desc?: string;
-  feature2_title?: string;
-  feature2_desc?: string;
-  feature3_title?: string;
-  feature3_desc?: string;
   // Footer
   footer_text?: string;
   footer_subtext?: string;

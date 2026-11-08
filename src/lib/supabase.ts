@@ -376,12 +376,6 @@ const DEFAULT_CUSTOMIZATION: Customization = {
   login_background_value: 'linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)',
   home_background_type: 'image',
   home_background_value: '',
-  feature1_title: 'Partner Outlets',
-  feature1_desc: 'Verified merchants offer exclusive member discounts.',
-  feature2_title: 'Instant Savings',
-  feature2_desc: 'Discounts are computed in real-time at the checkout terminal.',
-  feature3_title: 'Member Cards',
-  feature3_desc: 'Every member gets unique QR credentials.',
   custom_css: '',
 };
 export class SupabaseDatabaseService {

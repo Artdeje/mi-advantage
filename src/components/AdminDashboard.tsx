@@ -265,13 +265,6 @@ export default function AdminDashboard({
   const [h1Input, setH1Input] = useState("");
   const [h2Input, setH2Input] = useState("");
   const [pInput, setPInput] = useState("");
-  // Feature strip editable fields
-  const [f1Title, setF1Title] = useState("");
-  const [f1Desc, setF1Desc] = useState("");
-  const [f2Title, setF2Title] = useState("");
-  const [f2Desc, setF2Desc] = useState("");
-  const [f3Title, setF3Title] = useState("");
-  const [f3Desc, setF3Desc] = useState("");
   // Landing page background
   const [homeBgType, setHomeBgType] = useState<"none" | "image" | "gradient">("none");
   const [homeBgValue, setHomeBgValue] = useState("");
@@ -376,14 +369,6 @@ export default function AdminDashboard({
     // Seed footer values
     setFooterText(currentCust.footer_text || "");
     setFooterSubtext(currentCust.footer_subtext || "");
-
-    // Seed feature strip values
-    setF1Title(currentCust.feature1_title || "");
-    setF1Desc(currentCust.feature1_desc || "");
-    setF2Title(currentCust.feature2_title || "");
-    setF2Desc(currentCust.feature2_desc || "");
-    setF3Title(currentCust.feature3_title || "");
-    setF3Desc(currentCust.feature3_desc || "");
 
     // Seed landing page background
     setHomeBgType(currentCust.home_background_type || "none");
@@ -911,18 +896,6 @@ export default function AdminDashboard({
   const saveBrandingScanTerminal = async (e: React.FormEvent) => {
     e.preventDefault();
     await saveBrandingField({ scan_title: scanTitleInput, scan_subtitle: scanSubtitleInput }, "Scan terminal content");
-  };
-
-  const saveBrandingFeatures = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({
-      feature1_title: f1Title,
-      feature1_desc: f1Desc,
-      feature2_title: f2Title,
-      feature2_desc: f2Desc,
-      feature3_title: f3Title,
-      feature3_desc: f3Desc,
-    }, "Feature strip");
   };
 
   const saveBrandingBg = async (e: React.FormEvent) => {
@@ -3609,52 +3582,6 @@ export default function AdminDashboard({
                       className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
                     >
                       Save Scan Terminal Content
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* ROW 2B: Feature Strip (editable landing page cards) */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Feature Strip (3 Partner Cards)</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 1 Title</label>
-                      <input type="text" value={f1Title} onChange={(e) => setF1Title(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 1 Description</label>
-                      <input type="text" value={f1Desc} onChange={(e) => setF1Desc(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 2 Title</label>
-                      <input type="text" value={f2Title} onChange={(e) => setF2Title(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 2 Description</label>
-                      <input type="text" value={f2Desc} onChange={(e) => setF2Desc(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 3 Title</label>
-                      <input type="text" value={f3Title} onChange={(e) => setF3Title(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card 3 Description</label>
-                      <input type="text" value={f3Desc} onChange={(e) => setF3Desc(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
-                  <div className="lg:col-span-3">
-                    <button
-                      type="button"
-                      onClick={saveBrandingFeatures}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Feature Strip
                     </button>
                   </div>
                 </div>

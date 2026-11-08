@@ -29,14 +29,6 @@ export default function WelcomePage() {
   const footerText = cust?.footer_text || "";
   const footerSubtext = cust?.footer_subtext || "";
 
-  // Optional three-step strip — populated from Branding → Features. Only
-  // rendered when the admin has actually written something.
-  const features = [
-    { title: cust?.feature1_title || "", desc: cust?.feature1_desc || "" },
-    { title: cust?.feature2_title || "", desc: cust?.feature2_desc || "" },
-    { title: cust?.feature3_title || "", desc: cust?.feature3_desc || "" },
-  ].filter((f) => f.title.trim() || f.desc.trim());
-
   // Landing page background (image / gradient / none).
   //   "image"  → the uploaded artwork, or the built-in card-themed artwork
   //   "gradient" → the CSS gradient string
@@ -197,39 +189,6 @@ export default function WelcomePage() {
           </p>
         </div>
       </main>
-
-      {/* HOW IT WORKS — admin-editable via Branding → Features */}
-      {features.length > 0 && (
-        <section
-          aria-label="How it works"
-          className="relative z-10 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur border-t border-slate-200 dark:border-slate-800"
-        >
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {features.map((feature, i) => (
-                <div
-                  key={i}
-                  className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm"
-                >
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900 font-black text-sm">
-                    {i + 1}
-                  </span>
-                  {feature.title && (
-                    <h3 className="mt-3 text-sm font-black text-slate-900 dark:text-slate-100">
-                      {feature.title}
-                    </h3>
-                  )}
-                  {feature.desc && (
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                      {feature.desc}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
 
       <PartnerCarousel />
 
