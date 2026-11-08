@@ -7,14 +7,10 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     build: {
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            charts: ['recharts'],
-            pdf: ['jspdf', 'jspdf-autotable'],
-          },
-        },
-      },
+      // No manualChunks: forcing recharts/jsPDF into named chunks also pulled
+      // their shared dependencies (React) into those chunks, which made the
+      // entry statically import them and preload ~850 kB on every page. Rollup
+      // now keeps them in the lazy route chunks that actually need them.
     },
     resolve: {
       alias: {

@@ -7,14 +7,15 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ShopRegistrationPage from "./pages/ShopRegistrationPage";
 import CustomerPortal from "./components/CustomerPortal";
-import SelfRegistrationPage from "./components/SelfRegistrationPage";
 import WelcomePage from "./components/WelcomePage";
 import { applyTheme, getInitialTheme } from "./lib/theme";
 
-// Dashboards pull in charting (recharts) and the PDF toolchain. Loading them
-// on demand keeps the public landing/scan pages fast on mobile.
+// Heavy routes load on demand: the dashboards pull in charting (recharts) and
+// the self-registration page pulls in the PDF toolkit (jsPDF). Keeping them out
+// of the entry chunk makes the landing/scan pages much lighter on mobile.
 const AdminDashboard = React.lazy(() => import("./components/AdminDashboard"));
 const ShopDashboard = React.lazy(() => import("./components/ShopDashboard"));
+const SelfRegistrationPage = React.lazy(() => import("./components/SelfRegistrationPage"));
 
 // Legacy cards and counter QRs still encode HashRouter URLs
 // (e.g. https://…/#/scan?card=CUST-001). Rewrite them to clean BrowserRouter
@@ -209,7 +210,7 @@ export default function App() {
           <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
             <div className="text-center">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600 mx-auto mb-4"></div>
-              <p className="text-slate-500 text-sm">Loading dashboard…</p>
+              <p className="text-slate-500 text-sm">Loading…</p>
             </div>
           </div>
         }
