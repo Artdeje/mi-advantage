@@ -23,7 +23,7 @@ import {
   X,
 } from './AdminIcons';
 import ThemeToggle from './ThemeToggle';
-import { Html5Qrcode } from 'html5-qrcode';
+import type { Html5Qrcode } from 'html5-qrcode';
 
 export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }) {
   // Database states
@@ -76,7 +76,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   // and verify the card in the background, otherwise the shop terminal form
   // flashes for the whole duration of the lookup (seconds on a cold start).
   const isExternalCardEntry = entryMode.externalCard && !entryMode.terminal;
-  const [showPartners, setShowPartners] = useState(isExternalCardEntry);
+  // A guest opening /scan (no card link, no terminal flag) should land on the
+  // partner directory — the internal shop terminal is not for them. The
+  // directory's "Scan another" button still opens the camera scanner.
+  const guestPartnersEntry = !isShopSession && !entryMode.terminal;
+  const [showPartners, setShowPartners] = useState(isExternalCardEntry || guestPartnersEntry);
   // True while the external card lookup is still in flight; the partner page
   // shows a "checking member card" banner instead of the terminal form.
   const [verifyingExternalCard, setVerifyingExternalCard] = useState(isExternalCardEntry);
@@ -123,7 +127,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   // link is in play — including while its lookup is still running — so the
   // shop form never flashes before the member result.
   const partnersPageVisible =
-    showPartners && (scannedCustomer !== null || verifyingExternalCard || isExternalCardEntry);
+    showPartners &&
+    (scannedCustomer !== null ||
+      verifyingExternalCard ||
+      isExternalCardEntry ||
+      guestPartnersEntry);
 
   // Scanned shop state — a shop QR fills the discount form automatically,
   // so the operator never has to choose the shop from the dropdown.
@@ -430,6 +438,9 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     // Allow container element to render first
     setTimeout(async () => {
       try {
+        // Loaded on demand: the scanner bundle is only needed once a camera
+        // opens, keeping the partner page light on mobile.
+        const { Html5Qrcode } = await import('html5-qrcode');
         const html5QrCode = new Html5Qrcode(scannerContainerId);
         qrCodeInstanceRef.current = html5QrCode;
 
@@ -493,6 +504,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
     setIsShopCameraActive(true);
     setTimeout(async () => {
       try {
+        const { Html5Qrcode } = await import('html5-qrcode');
         const html5QrCode = new Html5Qrcode(shopScannerContainerId);
         shopQrRef.current = html5QrCode;
         await html5QrCode.start(

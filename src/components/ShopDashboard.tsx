@@ -4,7 +4,7 @@ import { getSupabase } from '../lib/supabaseClient';
 import { readImageAsDataUrl } from '../lib/imageUtil';
 import { Shop, Sale, Customer, Product, Customization } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Html5Qrcode } from 'html5-qrcode';
+import type { Html5Qrcode } from 'html5-qrcode';
 import ShopCounterQr from './ShopCounterQr';
 import {
   Store, Camera, RefreshCw, ShoppingBag, CheckCircle2, AlertTriangle,
@@ -14,6 +14,8 @@ import {
 } from './AdminIcons';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import ThemeToggle from './ThemeToggle';
+import LiveBadge from './LiveBadge';
+import { useLiveRefresh } from '../lib/useLiveRefresh';
 
 export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: string; email: string }; onLogout?: () => void }) {
   const [shopDetails, setShopDetails] = useState<Shop | null>(null);
@@ -338,6 +340,104 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
     loadData();
   }, [shopUser]);
 
+  // --- Live polling (2s) -------------------------------------------------
+  // Updates data arrays only: account fields, the profile picture, the scanned
+  // customer, and the transaction form are never touched by a poll.
+  const liveRef = useRef({ salesFullAt: 0 });
+  const refreshLive = async () => {
+    const now = Date.now();
+    if (activeTab === 'account') return;
+
+    if (activeTab === 'dashboard') {
+      const newest = sales[0]?.created_at || '';
+      const full = !newest || now - liveRef.current.salesFullAt > 15000;
+      if (full) liveRef.current.salesFullAt = now;
+      const [salesR, productsR, shopsR] = await Promise.allSettled([
+        full ? db.getSales() : db.getSalesSince(newest),
+        db.getProducts(shopUser.id),
+        db.getShopsLite(),
+      ]);
+
+      if (salesR.status === 'fulfilled') {
+        const incoming = salesR.value.filter((s) => s.shop_id === shopUser.id);
+        setSales((prev) => {
+          if (full) {
+            const sorted = [...incoming].sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+            );
+            const key = (rows: Sale[]) =>
+              rows.map((r) => `${r.id}:${r.final_amount}:${r.amount_before_discount}`).join('|');
+            return key(prev) === key(sorted) ? prev : sorted;
+          }
+          if (!incoming.length) return prev;
+          const seen = new Set(prev.map((s) => s.id));
+          const fresh = incoming.filter((s) => !seen.has(s.id));
+          if (!fresh.length) return prev;
+          return [...fresh, ...prev].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+          );
+        });
+      }
+      if (productsR.status === 'fulfilled') {
+        const incoming = productsR.value;
+        setProducts((prev) => {
+          const key = (rows: Product[]) =>
+            rows.map((r) => `${r.id}:${r.name}:${r.price}:${r.stock}:${r.status}`).join('|');
+          return key(prev) === key(incoming) ? prev : incoming;
+        });
+      }
+      if (shopsR.status === 'fulfilled') {
+        const current = shopsR.value.find((s) => s.id === shopUser.id);
+        if (current) {
+          setShopDetails((prev) => (prev ? { ...prev, ...current } : current));
+        }
+      }
+      return;
+    }
+
+    if (activeTab === 'sales') {
+      const newest = sales[0]?.created_at || '';
+      const full = !newest || now - liveRef.current.salesFullAt > 15000;
+      if (full) liveRef.current.salesFullAt = now;
+      const incoming = (full ? await db.getSales() : await db.getSalesSince(newest)).filter(
+        (s) => s.shop_id === shopUser.id,
+      );
+      setSales((prev) => {
+        const sorted = [...incoming].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+        const key = (rows: Sale[]) =>
+          rows.map((r) => `${r.id}:${r.final_amount}:${r.amount_before_discount}`).join('|');
+        if (full) return key(prev) === key(sorted) ? prev : sorted;
+        if (!sorted.length) return prev;
+        const seen = new Set(prev.map((s) => s.id));
+        const fresh = sorted.filter((s) => !seen.has(s.id));
+        if (!fresh.length) return prev;
+        return [...fresh, ...prev].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+      });
+      return;
+    }
+
+    if (activeTab === 'products') {
+      const incoming = await db.getProducts(shopUser.id);
+      setProducts((prev) => {
+        const key = (rows: Product[]) =>
+          rows.map((r) => `${r.id}:${r.name}:${r.price}:${r.stock}:${r.status}`).join('|');
+        return key(prev) === key(incoming) ? prev : incoming;
+      });
+    }
+  };
+
+  // 2-second live refresh for the active tab only. Paused while the scanner,
+  // camera, or PIN prompt is open so an in-progress scan is never disturbed.
+  const shopLive = useLiveRefresh(refreshLive, {
+    intervalMs: 2000,
+    enabled: activeTab !== 'account',
+    pause: scanModalOpen || isCameraActive || !!pendingPinCustomer,
+  });
+
   // Clean up scanner on unmount
   useEffect(() => {
     return () => {
@@ -412,6 +512,8 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
     setIsCameraActive(true);
 
     setTimeout(async () => {
+      // Loaded on demand so the dashboard shell stays light.
+      const { Html5Qrcode } = await import('html5-qrcode');
       const opposite = mode === 'user' ? 'environment' : 'user';
 
       // Enumerate real cameras; some devices (e.g. tablets) have no front camera.
@@ -969,6 +1071,7 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
           </div>
 
           <div className="flex items-center gap-3 justify-center">
+            <LiveBadge live={shopLive} />
             <ThemeToggle />
             {onLogout && (
               <button

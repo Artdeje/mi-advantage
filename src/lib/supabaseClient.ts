@@ -34,6 +34,23 @@ class ApiClient {
     return new QueryBuilder(this.baseUrl, table, this.authHeaders.bind(this));
   }
 
+  // Raw authenticated GET for non-table endpoints (e.g. /api/db/partners).
+  async get<T>(path: string): Promise<ApiResponse<T>> {
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        headers: this.authHeaders(),
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return { data: null, error: { message: body.error || res.statusText } };
+      }
+      return { data: (await res.json()) as T, error: null };
+    } catch (err: any) {
+      return { data: null, error: { message: err?.message || "Request failed" } };
+    }
+  }
+
   // Generic server endpoint call (Bearer-protected) — used for non-table
   // routes such as POST /api/db/seed.
   async post(path: string, body?: unknown): Promise<{ ok: boolean; data: any }> {
@@ -150,6 +167,8 @@ class QueryBuilder {
   private filters: [string, string, any][] = [];
   private ilikeFilters: [string, any][] = [];
   private inFilters: [string, any[]][] = [];
+  // Comparison filters used by incremental polling (created_at_gt, etc.).
+  private compareFilters: [string, string, any][] = [];
   private orderCol: string | null = null;
   private orderAsc = true;
   private limitCount: number | null = null;
@@ -212,6 +231,26 @@ class QueryBuilder {
 
   in(col: string, vals: any[]): this {
     this.inFilters.push([col, vals]);
+    return this;
+  }
+
+  gt(col: string, val: any): this {
+    this.compareFilters.push(["gt", col, val]);
+    return this;
+  }
+
+  gte(col: string, val: any): this {
+    this.compareFilters.push(["gte", col, val]);
+    return this;
+  }
+
+  lt(col: string, val: any): this {
+    this.compareFilters.push(["lt", col, val]);
+    return this;
+  }
+
+  lte(col: string, val: any): this {
+    this.compareFilters.push(["lte", col, val]);
     return this;
   }
 
@@ -369,6 +408,16 @@ class QueryBuilder {
 
     for (const [col, val] of this.ilikeFilters) {
       params.set(`${col}_ilike`, String(val));
+    }
+
+    for (const [op, col, val] of this.compareFilters) {
+      params.set(`${col}_${op}`, String(val));
+    }
+
+    // Column projection: keeps heavy fields (base64 logos, contracts) out of
+    // the 2-second polling payloads.
+    if (this.selectCols && this.selectCols !== "*") {
+      params.set("select", this.selectCols);
     }
 
     if (this.orderCol) {

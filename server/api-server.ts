@@ -4,6 +4,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import path from "path";
 import fs from "fs";
+import zlib from "zlib";
 import {
   getDb,
   sendDbError,
@@ -22,10 +23,69 @@ app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "https://mi-advantage.ai.studio");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  // Live data must never be served from the browser cache — a revalidated
-  // 304 used to wipe the admin lists.
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  // Live API data must never be served from the browser cache — a revalidated
+  // 304 used to wipe the admin lists. Hashed build assets are handled by the
+  // static layer below and keep their long-lived immutable cache.
+  if (_req.path.startsWith("/api/")) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  }
   if (_req.method === "OPTIONS") { res.sendStatus(200); return; }
+  next();
+});
+
+// gzip for JSON API responses. The dashboards poll every two seconds, so
+// compressing the payload is a large win on mobile connections. Static build
+// assets are pre-compressed in their own handler below (streaming through a
+// transform here would break pipe backpressure for large files).
+app.use((req, res, next) => {
+  if (req.method !== "GET") return next();
+  if (!req.path.startsWith("/api/")) return next();
+  if (!/\bgzip\b/i.test(String(req.headers["accept-encoding"] || ""))) return next();
+  if (res.getHeader("Content-Encoding")) return next();
+
+  const originalWrite = res.write.bind(res);
+  const originalEnd = res.end.bind(res);
+  let gzip: zlib.Gzip | null = null;
+  let decided = false;
+
+  const compressible = () => {
+    const ct = String(res.getHeader("Content-Type") || "");
+    return /^(application\/(json|javascript|xml)|text\/|image\/svg)/i.test(ct);
+  };
+
+  const startGzip = () => {
+    res.setHeader("Content-Encoding", "gzip");
+    res.setHeader("Vary", "Accept-Encoding");
+    res.removeHeader("Content-Length");
+    gzip = zlib.createGzip({ level: 6 });
+    gzip.on("data", (chunk: Buffer) => originalWrite(chunk));
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (res as any).write = function (chunk: any, encoding?: any, cb?: any) {
+    if (!decided) {
+      decided = true;
+      if (res.statusCode === 200 && compressible()) startGzip();
+    }
+    if (!gzip) return originalWrite(chunk, encoding, cb);
+    return gzip.write(chunk, encoding, cb);
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (res as any).end = function (chunk?: any, encoding?: any, cb?: any) {
+    // res.end(cb) signature.
+    if (typeof chunk === "function") { cb = chunk; chunk = undefined; encoding = undefined; }
+    if (!decided) {
+      decided = true;
+      if (res.statusCode === 200 && compressible()) startGzip();
+    }
+    if (!gzip) return originalEnd(chunk, encoding, cb);
+    gzip.once("end", () => originalEnd(undefined, undefined, cb));
+    if (chunk !== undefined && chunk !== null) gzip.end(chunk, encoding);
+    else gzip.end();
+    return res;
+  };
+
   next();
 });
 
@@ -149,6 +209,8 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   if (req.method === "GET" && req.path === "/api/db/customization") { next(); return; }
   // Allow unauthenticated GET to shops (public partner list for CustomerPortal)
   if (req.method === "GET" && req.path === "/api/db/shops" && !req.query.single) { next(); return; }
+  // Public, sanitized partner directory (landing carousel + guest view).
+  if (req.method === "GET" && req.path === "/api/db/partners") { next(); return; }
   // Allow unauthenticated customer QR lookup
   // Allow unauthenticated customer card lookup (scan terminals / external QR
   // scanners). Both the exact code and the substring form are permitted.
@@ -779,16 +841,61 @@ app.post("/api/db/:table/upsert", async (req, res) => {
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
+// Public partner directory: approved shops only, with a strict whitelist of
+// display fields. Never includes credentials or private documents, and it
+// keeps working if a future column is added to the shops table.
+const PUBLIC_PARTNER_FIELDS = [
+  "id", "shop_name", "discount_percent", "business_type", "discount_scope",
+  "description", "profile_picture", "qr_code", "status", "created_at",
+] as const;
+
+app.get("/api/db/partners", async (_req, res) => {
+  try {
+    const { data, error } = await getDb()
+      .from("shops")
+      .select("*")
+      .eq("status", "approved")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    const rows = coerceNumerics("shops", (data || []) as any[]);
+    const out = (rows as any[]).map((row) => {
+      const safe: Record<string, unknown> = {};
+      for (const key of PUBLIC_PARTNER_FIELDS) safe[key] = row?.[key] ?? null;
+      return safe;
+    });
+    res.json(out);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Could not load partners" });
+  }
+});
+
 app.get("/api/db/:table", async (req, res) => {
   const { table } = req.params;
   if (!validateTable(table)) { res.status(400).json({ error: "Invalid table" }); return; }
   try {
-    let q = getDb().from(table).select("*");
+    // Optional column projection (e.g. "id,shop_name,discount_percent") so the
+    // 2-second dashboard polls skip heavy base64 logos and contracts.
+    const rawSelect = String(req.query.select || "*").trim();
+    const selectList = rawSelect === "*"
+      ? []
+      : rawSelect.split(",").map((c) => c.trim()).filter(Boolean);
+    if (rawSelect !== "*" && (selectList.length === 0 || selectList.some((c) => !isSafeIdentifier(c)))) {
+      res.status(400).json({ error: "Invalid select columns" }); return;
+    }
+    let q = getDb().from(table).select(selectList.length ? selectList.join(",") : "*");
     const metaKeys = new Set(["order", "ascending", "limit", "offset", "single", "select"]);
     const filters = Object.entries(req.query).filter(([k]) => !metaKeys.has(k));
     for (const [key, value] of filters) {
       const v = String(value);
-      if (key.endsWith("_ilike")) {
+      const cmp = key.match(/^(.*)_(gte|gt|lte|lt)$/);
+      if (cmp) {
+        const [, col, op] = cmp;
+        if (!isSafeIdentifier(col)) { res.status(400).json({ error: `Invalid column: ${col}` }); return; }
+        if (op === "gte") q = q.gte(col, v);
+        else if (op === "gt") q = q.gt(col, v);
+        else if (op === "lte") q = q.lte(col, v);
+        else q = q.lt(col, v);
+      } else if (key.endsWith("_ilike")) {
         const col = key.replace(/_ilike$/, "");
         if (!isSafeIdentifier(col)) { res.status(400).json({ error: `Invalid column: ${col}` }); return; }
         // The client may send a ready-made pattern (e.g. "%CUST-01%"). Only
@@ -832,7 +939,15 @@ app.get("/api/db/:table", async (req, res) => {
     }
     const { data: rows, error } = await q;
     if (error) throw error;
-    const out = coerceNumerics(table, rows || []);
+    let out = coerceNumerics(table, rows || []);
+    // Public (unauthenticated) shop reads must never expose credentials or
+    // private documents. The landing carousel and guest lookups use this.
+    if (table === "shops" && !req.session) {
+      out = (out as any[]).map((row) => {
+        const { password, contract, rdb_certificate, ...safe } = row || {};
+        return safe;
+      });
+    }
     if (req.query.single === "true") res.json((out as any[])[0] || null);
     else res.json(out);
   } catch (err: any) { res.status(500).json({ error: err?.message }); }
@@ -1131,8 +1246,69 @@ app.use("/api", (_req, res) => {
 
 const DIST_DIR = path.join(process.cwd(), "dist");
 if (fs.existsSync(path.join(DIST_DIR, "index.html"))) {
-  app.use(express.static(DIST_DIR));
+  // Pre-compressed build assets. Vite emits content-hashed filenames, so each
+  // gzip buffer can be cached for the life of the process. Compressing through
+  // a streaming transform would break pipe backpressure for these files.
+  const ASSET_GZIP_CACHE = new Map<string, Buffer>();
+  const COMPRESSIBLE_ASSET = /\.(js|mjs|css|svg|json|map|txt)$/i;
+
+  app.get("/assets/:file", (req, res, next) => {
+    if (!/\bgzip\b/i.test(String(req.headers["accept-encoding"] || ""))) return next();
+    const file = String(req.params.file || "");
+    if (!COMPRESSIBLE_ASSET.test(file) || file.includes("..") || /[\\/]/.test(file)) {
+      return next();
+    }
+    let gz = ASSET_GZIP_CACHE.get(file);
+    if (!gz) {
+      try {
+        gz = zlib.gzipSync(fs.readFileSync(path.join(DIST_DIR, "assets", file)), { level: 9 });
+      } catch {
+        return next();
+      }
+      ASSET_GZIP_CACHE.set(file, gz);
+    }
+    const ext = path.extname(file).toLowerCase();
+    const type =
+      ext === ".js" || ext === ".mjs" ? "text/javascript; charset=utf-8"
+      : ext === ".css" ? "text/css; charset=utf-8"
+      : ext === ".svg" ? "image/svg+xml"
+      : ext === ".json" ? "application/json; charset=utf-8"
+      : "text/plain; charset=utf-8";
+    res.setHeader("Content-Type", type);
+    res.setHeader("Content-Encoding", "gzip");
+    res.setHeader("Vary", "Accept-Encoding");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.setHeader("Content-Length", String(gz.length));
+    res.end(gz);
+  });
+
+  // Vite emits content-hashed filenames under /assets — cache them forever.
+  // This also serves non-gzip clients and any range requests.
+  app.use(
+    "/assets",
+    express.static(path.join(DIST_DIR, "assets"), {
+      maxAge: "1y",
+      immutable: true,
+      setHeaders: (res) => {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      },
+    }),
+  );
+  // Everything else (index.html, favicon) revalidates so a new deploy is
+  // picked up immediately, without re-downloading the hashed assets.
+  app.use(
+    express.static(DIST_DIR, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache, must-revalidate");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=3600");
+        }
+      },
+    }),
+  );
   app.get("*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
     res.sendFile(path.join(DIST_DIR, "index.html"));
   });
 } else {

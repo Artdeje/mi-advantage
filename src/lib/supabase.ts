@@ -543,6 +543,60 @@ export class SupabaseDatabaseService {
     return fetchAllPaged<Shop>("shops", "created_at", true);
   }
 
+  // Public, sanitized partner directory used by the landing carousel and the
+  // guest partner page. Served by a dedicated endpoint that never includes
+  // passwords, contracts, or RDB certificates.
+  async getPartners(): Promise<Shop[]> {
+    try {
+      const { data, error } = await getSupabase().get<Shop[]>("/api/db/partners");
+      if (error || !data) return [];
+      return data;
+    } catch {
+      return [];
+    }
+  }
+
+  // Lightweight shop projection for the 2-second dashboard polls: skips the
+  // base64 profile pictures and private documents. Falls back to the columns
+  // that predate the v7 migration when those are not present yet.
+  async getShopsLite(): Promise<Shop[]> {
+    const v7 = await areShopV7ColumnsReady();
+    const cols = v7
+      ? "id,shop_name,discount_percent,email,status,qr_code,business_type,discount_scope,created_at"
+      : "id,shop_name,discount_percent,email,status,qr_code,created_at";
+    return fetchAllPaged<Shop>("shops", "created_at", true, (q) => q.select(cols));
+  }
+
+  // Customer data for live polling. Unlike getCustomers(), this never runs
+  // the card-status sweep (which writes on every call). It selects * because
+  // several optional columns ship via migrations — an explicit list would
+  // fail entirely on a deployment that has not run them yet.
+  async getCustomersLite(): Promise<Customer[]> {
+    return fetchAllPaged<Customer>("customers", "created_at", false);
+  }
+
+  // Incremental polls — only rows created after the newest one we already have.
+  async getSalesSince(iso: string): Promise<Sale[]> {
+    if (!iso) return this.getSales();
+    return fetchAllPaged<Sale>("sales", "created_at", false, (q) =>
+      q.gt("created_at", iso),
+    );
+  }
+
+  async getCustomersSince(iso: string): Promise<Customer[]> {
+    if (!iso) return this.getCustomersLite();
+    return fetchAllPaged<Customer>("customers", "created_at", false, (q) =>
+      q.gt("created_at", iso),
+    );
+  }
+
+  async getAuditLogsSince(iso: string): Promise<AuditLog[]> {
+    if (!iso) return this.getAuditLogs();
+    return fetchAllPaged<AuditLog>("audit_logs", "created_at", false, (q) =>
+      q.gt("created_at", iso),
+    );
+  }
+
   // Generate a unique public guest-scan code (SHOP-####) for a shop.
   private async generateUniqueShopQRCode(): Promise<string> {
     const shops = await this.getShops();

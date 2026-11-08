@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   db,
@@ -75,8 +75,10 @@ import {
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { readImageAsDataUrl } from "../lib/imageUtil";
+import { useLiveRefresh } from "../lib/useLiveRefresh";
 import { QRCodeCanvas } from "qrcode.react";
 import ThemeToggle from "./ThemeToggle";
+import LiveBadge from "./LiveBadge";
 import ShopCounterQr, { downloadShopQrSvg, printShopQrSvg } from "./ShopCounterQr";
 import {
   MemberCard,
@@ -99,6 +101,59 @@ const COLORS = [
   "#ec4899",
   "#06b6d4",
 ];
+
+// --- Live-refresh helpers -------------------------------------------------
+
+// Append only rows we have never seen, keeping the list in created_at order.
+function mergeNewRows<T extends { id: string; created_at?: string }>(
+  prev: T[],
+  incoming: T[],
+  desc = true,
+): T[] {
+  if (!incoming.length) return prev;
+  const seen = new Set(prev.map((r) => r.id));
+  const fresh = incoming.filter((r) => !seen.has(r.id));
+  if (!fresh.length) return prev;
+  const out = [...fresh, ...prev];
+  out.sort((a, b) =>
+    desc
+      ? String(b.created_at || "").localeCompare(String(a.created_at || ""))
+      : String(a.created_at || "").localeCompare(String(b.created_at || "")),
+  );
+  return out;
+}
+
+// Cheap fingerprint used to skip setState when a poll returned identical data.
+function rowsKey<T extends { id: string }>(rows: T[], fields: (keyof T)[]): string {
+  return rows
+    .map((r) => [r.id, ...fields.map((f) => String((r as any)[f] ?? ""))].join(":"))
+    .join("|");
+}
+
+const SALES_KEY_FIELDS: (keyof Sale)[] = [
+  "amount_before_discount",
+  "discount_percent",
+  "discount_applied",
+  "final_amount",
+  "customer_name",
+];
+const SHOP_KEY_FIELDS: (keyof Shop)[] = [
+  "shop_name",
+  "discount_percent",
+  "status",
+  "business_type",
+  "discount_scope",
+  "profile_picture",
+  "description",
+];
+const CUSTOMER_KEY_FIELDS: (keyof Customer)[] = [
+  "name",
+  "card_status",
+  "valid_until",
+  "credit_status",
+  "subscription_status",
+];
+const LOG_KEY_FIELDS: (keyof AuditLog)[] = ["action", "details"];
 
 export default function AdminDashboard({
   onCustomizationChange,
@@ -351,6 +406,139 @@ export default function AdminDashboard({
       db.currentUser = null;
       onLogout?.();
     }
+  };
+
+  // --- Live polling (2s) -------------------------------------------------
+  // Tracks the last full reconciliation per dataset so incremental polls stay
+  // cheap while edits/deletions are still picked up periodically. Polls only
+  // the ACTIVE tab's data and never re-seeds form inputs.
+  const liveRef = useRef({ salesFullAt: 0, customersFullAt: 0, logsFullAt: 0 });
+
+  const refreshLive = async () => {
+    const now = Date.now();
+
+    if (activeTab === "analytics") {
+      const newestSale = sales[0]?.created_at || "";
+      const newestCustomer = customers[0]?.created_at || "";
+      const fullSales = !newestSale || now - liveRef.current.salesFullAt > 15000;
+      const fullCustomers = !newestCustomer || now - liveRef.current.customersFullAt > 15000;
+      if (fullSales) liveRef.current.salesFullAt = now;
+      if (fullCustomers) liveRef.current.customersFullAt = now;
+
+      const [salesR, custR, shopR] = await Promise.allSettled([
+        fullSales ? db.getSales() : db.getSalesSince(newestSale),
+        fullCustomers ? db.getCustomersLite() : db.getCustomersSince(newestCustomer),
+        db.getShopsLite(),
+      ]);
+
+      if (salesR.status === "fulfilled") {
+        const incoming = salesR.value;
+        setSales((prev) => {
+          if (fullSales) {
+            return rowsKey(prev, SALES_KEY_FIELDS) === rowsKey(incoming, SALES_KEY_FIELDS)
+              ? prev
+              : incoming;
+          }
+          return mergeNewRows(prev, incoming, true);
+        });
+      }
+      if (custR.status === "fulfilled") {
+        const incoming = custR.value;
+        setCustomers((prev) => {
+          if (fullCustomers) {
+            const merged = incoming.map((row) => {
+              const existing = prev.find((p) => p.id === row.id);
+              return existing ? { ...existing, ...row } : row;
+            });
+            return rowsKey(prev, CUSTOMER_KEY_FIELDS) === rowsKey(merged, CUSTOMER_KEY_FIELDS)
+              ? prev
+              : merged;
+          }
+          return mergeNewRows(prev, incoming, true);
+        });
+      }
+      if (shopR.status === "fulfilled") {
+        const incoming = shopR.value;
+        setShops((prev) => {
+          const merged = incoming.map((row) => {
+            const existing = prev.find((p) => p.id === row.id);
+            return existing ? { ...existing, ...row } : row;
+          });
+          return rowsKey(prev, SHOP_KEY_FIELDS) === rowsKey(merged, SHOP_KEY_FIELDS)
+            ? prev
+            : merged;
+        });
+      }
+      return;
+    }
+
+    if (activeTab === "shops") {
+      // Poll the light projection and merge into the rows loaded on first
+      // paint, so base64 logos and private documents are never re-downloaded.
+      const incoming = await db.getShopsLite();
+      setShops((prev) => {
+        const merged = incoming.map((row) => {
+          const existing = prev.find((p) => p.id === row.id);
+          return existing ? { ...existing, ...row } : row;
+        });
+        return rowsKey(prev, SHOP_KEY_FIELDS) === rowsKey(merged, SHOP_KEY_FIELDS)
+          ? prev
+          : merged;
+      });
+      return;
+    }
+
+    if (activeTab === "qrs" || activeTab === "referrers") {
+      const newest = customers[0]?.created_at || "";
+      const full = !newest || now - liveRef.current.customersFullAt > 30000;
+      if (full) liveRef.current.customersFullAt = now;
+      const incoming = full ? await db.getCustomersLite() : await db.getCustomersSince(newest);
+      setCustomers((prev) => {
+        if (full) {
+          const merged = incoming.map((row) => {
+            const existing = prev.find((p) => p.id === row.id);
+            return existing ? { ...existing, ...row } : row;
+          });
+          return rowsKey(prev, CUSTOMER_KEY_FIELDS) === rowsKey(merged, CUSTOMER_KEY_FIELDS)
+            ? prev
+            : merged;
+        }
+        return mergeNewRows(prev, incoming, true);
+      });
+      return;
+    }
+
+    if (activeTab === "audits") {
+      const newest = logs[0]?.created_at || "";
+      const full = !newest || now - liveRef.current.logsFullAt > 30000;
+      if (full) liveRef.current.logsFullAt = now;
+      const incoming = full ? await db.getAuditLogs() : await db.getAuditLogsSince(newest);
+      setLogs((prev) => {
+        if (full) {
+          return rowsKey(prev, LOG_KEY_FIELDS) === rowsKey(incoming, LOG_KEY_FIELDS)
+            ? prev
+            : incoming;
+        }
+        return mergeNewRows(prev, incoming, true);
+      });
+      return;
+    }
+
+    if (activeTab === "admins") {
+      const incoming = await db.getAdmins();
+      setAdminsList((prev) =>
+        JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming,
+      );
+      return;
+    }
+
+    if (activeTab === "reports") {
+      const newest = sales[0]?.created_at || "";
+      const incoming = newest ? await db.getSalesSince(newest) : await db.getSales();
+      setSales((prev) => mergeNewRows(prev, incoming, true));
+    }
+    // "customization" intentionally has no live poll: it would overwrite the
+    // admin's unsaved branding inputs.
   };
 
   useEffect(() => {
@@ -1533,6 +1721,14 @@ export default function AdminDashboard({
   const [joinCopied, setJoinCopied] = useState(false);
   const [joinMsg, setJoinMsg] = useState("");
 
+  // 2-second live refresh. Only the active tab's datasets are polled; the
+  // loop pauses while a modal / QR dialog is open or the tab is hidden.
+  const adminLive = useLiveRefresh(refreshLive, {
+    intervalMs: 2000,
+    enabled: activeTab !== "customization",
+    pause: shopModalOpen || cardModalOpen || !!qrModalShop || joinQrOpen,
+  });
+
   // Give every shop missing a guest-scan QR a valid unique one.
   const handleEnsureShopQRs = async () => {
     setShopQrFixMsg("Checking every shop for a valid guest-scan QR...");
@@ -1688,7 +1884,7 @@ export default function AdminDashboard({
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{customization?.title || "Mi Advantage"}</h1>
         </div>
-        <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900 rounded-full text-[10px] font-bold uppercase">Live</span>
+        <LiveBadge live={adminLive} compact />
         <ThemeToggle variant="sidebar" />
       </div>
 
@@ -1754,7 +1950,7 @@ export default function AdminDashboard({
         </div>
         {!sidebarCollapsed && (
           <div className="px-4 pt-3">
-            <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900 rounded-full text-[10px] font-bold uppercase">Live</span>
+            <LiveBadge live={adminLive} />
           </div>
         )}
 

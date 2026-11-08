@@ -6,12 +6,15 @@ import { AuthUser, Customization } from "./types";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ShopRegistrationPage from "./pages/ShopRegistrationPage";
-import AdminDashboard from "./components/AdminDashboard";
-import ShopDashboard from "./components/ShopDashboard";
 import CustomerPortal from "./components/CustomerPortal";
 import SelfRegistrationPage from "./components/SelfRegistrationPage";
 import WelcomePage from "./components/WelcomePage";
 import { applyTheme, getInitialTheme } from "./lib/theme";
+
+// Dashboards pull in charting (recharts) and the PDF toolchain. Loading them
+// on demand keeps the public landing/scan pages fast on mobile.
+const AdminDashboard = React.lazy(() => import("./components/AdminDashboard"));
+const ShopDashboard = React.lazy(() => import("./components/ShopDashboard"));
 
 // Legacy cards and counter QRs still encode HashRouter URLs
 // (e.g. https://…/#/scan?card=CUST-001). Rewrite them to clean BrowserRouter
@@ -201,7 +204,18 @@ function AppContent() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <React.Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+              <p className="text-slate-500 text-sm">Loading dashboard…</p>
+            </div>
+          </div>
+        }
+      >
+        <AppContent />
+      </React.Suspense>
     </BrowserRouter>
   );
 }

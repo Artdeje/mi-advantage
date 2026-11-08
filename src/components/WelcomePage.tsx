@@ -10,6 +10,7 @@ import {
 import ThemeToggle from "./ThemeToggle";
 import { deriveCardBrand } from "./MemberCard";
 import LandingBackground from "./LandingBackground";
+import PartnerCarousel from "./PartnerCarousel";
 
 export default function WelcomePage() {
   const [cust, setCust] = useState<Customization | null>(null);
@@ -27,6 +28,14 @@ export default function WelcomePage() {
   const p = cust?.home_p || "";
   const footerText = cust?.footer_text || "";
   const footerSubtext = cust?.footer_subtext || "";
+
+  // Optional three-step strip — populated from Branding → Features. Only
+  // rendered when the admin has actually written something.
+  const features = [
+    { title: cust?.feature1_title || "", desc: cust?.feature1_desc || "" },
+    { title: cust?.feature2_title || "", desc: cust?.feature2_desc || "" },
+    { title: cust?.feature3_title || "", desc: cust?.feature3_desc || "" },
+  ].filter((f) => f.title.trim() || f.desc.trim());
 
   // Landing page background (image / gradient / none).
   //   "image"  → the uploaded artwork, or the built-in card-themed artwork
@@ -116,8 +125,8 @@ export default function WelcomePage() {
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
             >
               <Camera className="w-4 h-4" />
-              <span className="hidden sm:inline">Card Scan</span>
-              <span className="sm:hidden">Scan</span>
+              <span className="hidden sm:inline">Find a Partner</span>
+              <span className="sm:hidden">Partners</span>
             </a>
             <a
               href="/login"
@@ -149,7 +158,7 @@ export default function WelcomePage() {
             <div className="px-4 py-3 flex flex-col gap-1.5">
               <a href="/scan" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
                 <Camera className="w-4 h-4" />
-                Card Scan
+                Find a Partner
               </a>
               <a href="/login" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
                 <LogIn className="w-4 h-4" />
@@ -188,6 +197,41 @@ export default function WelcomePage() {
           </p>
         </div>
       </main>
+
+      {/* HOW IT WORKS — admin-editable via Branding → Features */}
+      {features.length > 0 && (
+        <section
+          aria-label="How it works"
+          className="relative z-10 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur border-t border-slate-200 dark:border-slate-800"
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {features.map((feature, i) => (
+                <div
+                  key={i}
+                  className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm"
+                >
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900 font-black text-sm">
+                    {i + 1}
+                  </span>
+                  {feature.title && (
+                    <h3 className="mt-3 text-sm font-black text-slate-900 dark:text-slate-100">
+                      {feature.title}
+                    </h3>
+                  )}
+                  {feature.desc && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                      {feature.desc}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      <PartnerCarousel />
 
       {/* FOOTER */}
       <footer className="relative z-20 border-t border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur">
