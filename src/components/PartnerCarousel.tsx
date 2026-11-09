@@ -15,6 +15,17 @@ function isPhoneWidth(width: number): boolean {
   return width < 768;
 }
 
+// Distance between two consecutive mobile cards (width + gap), so autoplay and
+// the arrows always move exactly one page.
+function mobileStep(el: HTMLDivElement): number {
+  const tiles = el.querySelectorAll<HTMLElement>("[data-partner-tile]");
+  if (tiles.length > 1) {
+    const step = tiles[1].offsetLeft - tiles[0].offsetLeft;
+    if (step > 0) return step;
+  }
+  return el.clientWidth;
+}
+
 function monogramStyle(name: string): React.CSSProperties {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) % 360;
@@ -109,8 +120,7 @@ export default function PartnerCarousel() {
     const id = window.setInterval(() => {
       const el = mobileTrack.current;
       if (!el) return;
-      const tile = el.querySelector<HTMLElement>("[data-partner-tile]");
-      const step = tile ? tile.getBoundingClientRect().width + 12 : el.clientWidth * 0.7;
+      const step = mobileStep(el);
       const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 16;
       const behavior: ScrollBehavior = reducedMotion ? "auto" : "smooth";
       if (atEnd) el.scrollTo({ left: 0, behavior });
@@ -122,9 +132,7 @@ export default function PartnerCarousel() {
   const scrollMobile = (dir: -1 | 1) => {
     const el = mobileTrack.current;
     if (!el) return;
-    const tile = el.querySelector<HTMLElement>("[data-partner-tile]");
-    const step = tile ? tile.getBoundingClientRect().width + 12 : el.clientWidth * 0.7;
-    el.scrollBy({ left: dir * step, behavior: reducedMotion ? "auto" : "smooth" });
+    el.scrollBy({ left: dir * mobileStep(el), behavior: reducedMotion ? "auto" : "smooth" });
   };
 
   const go = (dir: -1 | 1) => {
@@ -157,7 +165,7 @@ export default function PartnerCarousel() {
       title={`${shop.shop_name} — ${shop.discount_percent}% discount`}
       className={
         phone
-          ? "group snap-start shrink-0 w-40 h-40 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2.5 px-3 cursor-pointer"
+          ? "group snap-start shrink-0 w-full sm:w-[calc(50%-0.375rem)] h-52 sm:h-44 rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-3 px-5 cursor-pointer"
           : "group w-full h-32 sm:h-36 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-0.5 hover:border-emerald-400 dark:hover:border-emerald-600 transition-all flex flex-col items-center justify-center gap-2.5 px-3 cursor-pointer"
       }
     >
@@ -167,21 +175,41 @@ export default function PartnerCarousel() {
           alt={`${shop.shop_name} logo`}
           loading="lazy"
           decoding="async"
-          className="h-14 w-14 rounded-2xl object-contain"
+          className={
+            phone
+              ? "h-20 w-20 rounded-2xl object-contain"
+              : "h-14 w-14 rounded-2xl object-contain"
+          }
         />
       ) : (
         <span
-          className="h-14 w-14 rounded-2xl flex items-center justify-center font-black text-lg shrink-0"
+          className={
+            phone
+              ? "h-20 w-20 rounded-2xl flex items-center justify-center font-black text-2xl shrink-0"
+              : "h-14 w-14 rounded-2xl flex items-center justify-center font-black text-lg shrink-0"
+          }
           style={monogramStyle(shop.shop_name)}
         >
           {shop.shop_name.charAt(0).toUpperCase()}
         </span>
       )}
       <span className="w-full text-center min-w-0">
-        <span className="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
+        <span
+          className={
+            phone
+              ? "block text-base font-bold text-slate-800 dark:text-slate-100 truncate"
+              : "block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300"
+          }
+        >
           {shop.shop_name}
         </span>
-        <span className="mt-1 inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-900 px-2 py-0.5 text-[10px] sm:text-xs font-black text-emerald-700 dark:text-emerald-300">
+        <span
+          className={
+            phone
+              ? "mt-1.5 inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-900 px-3 py-1 text-xs font-black text-emerald-700 dark:text-emerald-300"
+              : "mt-1 inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-900 px-2 py-0.5 text-[10px] sm:text-xs font-black text-emerald-700 dark:text-emerald-300"
+          }
+        >
           {shop.discount_percent}% OFF
         </span>
       </span>
@@ -259,10 +287,10 @@ export default function PartnerCarousel() {
           </div>
         </div>
 
-        {/* Mobile: auto-width cards laid out inline in a swipeable row. */}
+        {/* Mobile: one full-width card per page (two on larger phones). */}
         <div
           ref={mobileTrack}
-          className="md:hidden -mx-4 px-4 flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="md:hidden -mx-4 px-4 flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           onFocusCapture={() => setFocused(true)}
           onBlurCapture={() => setFocused(false)}
           onTouchStart={(e) => {
@@ -278,7 +306,7 @@ export default function PartnerCarousel() {
             ? Array.from({ length: 3 }).map((_, i) => (
                 <div
                   key={`msk-${i}`}
-                  className="shrink-0 w-40 h-40 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse"
+                  className="shrink-0 w-full sm:w-[calc(50%-0.375rem)] h-52 sm:h-44 rounded-3xl bg-slate-100 dark:bg-slate-800 animate-pulse"
                 />
               ))
             : partners.map((shop) => renderTile(shop, `m-${shop.id}`, true))}
