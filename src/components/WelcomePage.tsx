@@ -3,7 +3,6 @@ import { Menu, X } from "lucide-react";
 import { db } from "../lib/supabase";
 import { Customization } from "../types";
 import {
-  Camera,
   LogIn,
   BadgeCheck,
 } from "./AdminIcons";
@@ -113,14 +112,6 @@ export default function WelcomePage() {
           <nav className="hidden md:flex items-center gap-2">
             <ThemeToggle />
             <a
-              href="/scan"
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
-            >
-              <Camera className="w-4 h-4" />
-              <span className="hidden sm:inline">Find a Partner</span>
-              <span className="sm:hidden">Partners</span>
-            </a>
-            <a
               href="/login"
               className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
             >
@@ -148,10 +139,6 @@ export default function WelcomePage() {
         {menuOpen && (
           <nav className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
             <div className="px-4 py-3 flex flex-col gap-1.5">
-              <a href="/scan" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
-                <Camera className="w-4 h-4" />
-                Find a Partner
-              </a>
               <a href="/login" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold uppercase tracking-wider transition-colors">
                 <LogIn className="w-4 h-4" />
                 Sign In

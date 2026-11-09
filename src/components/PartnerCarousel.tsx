@@ -5,12 +5,14 @@ import { ChevronLeft, ChevronRight, Store, X } from "./AdminIcons";
 
 const AUTOPLAY_MS = 5000;
 
+// Four large cards fill the page width on tablet/desktop. Phones get a
+// horizontally scrolling inline row instead of a fixed grid (see below).
 function perViewForWidth(width: number): number {
-  if (width >= 1280) return 6;
-  if (width >= 1024) return 5;
-  if (width >= 768) return 4;
-  if (width >= 640) return 3;
-  return 2;
+  return width >= 768 ? 4 : 1;
+}
+
+function isPhoneWidth(width: number): boolean {
+  return width < 768;
 }
 
 function monogramStyle(name: string): React.CSSProperties {
@@ -23,16 +25,17 @@ function monogramStyle(name: string): React.CSSProperties {
 }
 
 /**
- * Partner logo carousel. Advances one tile every 5 seconds, pauses on
- * hover/focus and when the tab is hidden, and falls back to a static grid for
- * users who prefer reduced motion.
+ * Partner logo carousel. Four large tiles fill the page width on desktop,
+ * while phones show an auto-width inline scroll row. Advances every 5 seconds,
+ * pauses on hover/focus and when the tab is hidden, and falls back to a static
+ * track for users who prefer reduced motion.
  */
 export default function PartnerCarousel() {
   const [partners, setPartners] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
   const [index, setIndex] = useState(0);
-  const [perViewBase, setPerViewBase] = useState(() =>
-    typeof window === "undefined" ? 4 : perViewForWidth(window.innerWidth),
+  const [isPhone, setIsPhone] = useState(() =>
+    typeof window === "undefined" ? false : isPhoneWidth(window.innerWidth),
   );
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -42,6 +45,7 @@ export default function PartnerCarousel() {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [detail, setDetail] = useState<Shop | null>(null);
   const touchStart = useRef<number | null>(null);
+  const mobileTrack = useRef<HTMLDivElement | null>(null);
 
   // Load the sanitized public partner directory. Landing data does not need
   // 2-second polling; a minute is plenty for logos.
@@ -64,7 +68,7 @@ export default function PartnerCarousel() {
   }, []);
 
   useEffect(() => {
-    const onResize = () => setPerViewBase(perViewForWidth(window.innerWidth));
+    const onResize = () => setIsPhone(isPhoneWidth(window.innerWidth));
     const onVisibility = () => setHidden(document.hidden);
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const onMotion = () => setReducedMotion(motion.matches);
@@ -82,7 +86,7 @@ export default function PartnerCarousel() {
 
   // Never leave empty slots: if there are fewer partners than the breakpoint
   // allows, show them all at their natural size so the strip can still slide.
-  const perView = Math.max(1, Math.min(perViewBase, partners.length || perViewBase));
+  const perView = Math.max(1, Math.min(4, partners.length || 4));
   const maxIndex = partners.length > 1 ? partners.length - 1 : 0;
   const paused = hovered || focused || hidden || reducedMotion;
 
@@ -90,15 +94,44 @@ export default function PartnerCarousel() {
     if (index > maxIndex) setIndex(0);
   }, [index, maxIndex]);
 
+  // Desktop: slide the track one card every 5 seconds.
   useEffect(() => {
-    if (paused || maxIndex === 0) return;
+    if (isPhone || paused || maxIndex === 0) return;
     const id = window.setInterval(() => {
       setIndex((i) => (i >= maxIndex ? 0 : i + 1));
     }, AUTOPLAY_MS);
     return () => window.clearInterval(id);
-  }, [paused, maxIndex]);
+  }, [isPhone, paused, maxIndex]);
+
+  // Mobile: scroll the inline row one card every 5 seconds.
+  useEffect(() => {
+    if (!isPhone || paused || partners.length < 2) return;
+    const id = window.setInterval(() => {
+      const el = mobileTrack.current;
+      if (!el) return;
+      const tile = el.querySelector<HTMLElement>("[data-partner-tile]");
+      const step = tile ? tile.getBoundingClientRect().width + 12 : el.clientWidth * 0.7;
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 16;
+      const behavior: ScrollBehavior = reducedMotion ? "auto" : "smooth";
+      if (atEnd) el.scrollTo({ left: 0, behavior });
+      else el.scrollBy({ left: step, behavior });
+    }, AUTOPLAY_MS);
+    return () => window.clearInterval(id);
+  }, [isPhone, paused, partners.length, reducedMotion]);
+
+  const scrollMobile = (dir: -1 | 1) => {
+    const el = mobileTrack.current;
+    if (!el) return;
+    const tile = el.querySelector<HTMLElement>("[data-partner-tile]");
+    const step = tile ? tile.getBoundingClientRect().width + 12 : el.clientWidth * 0.7;
+    el.scrollBy({ left: dir * step, behavior: reducedMotion ? "auto" : "smooth" });
+  };
 
   const go = (dir: -1 | 1) => {
+    if (isPhone) {
+      scrollMobile(dir);
+      return;
+    }
     setIndex((i) => {
       const next = i + dir;
       if (next < 0) return maxIndex;
@@ -114,6 +147,46 @@ export default function PartnerCarousel() {
   );
 
   if (!loading && tiles.length === 0) return null;
+
+  const renderTile = (shop: Shop, key: string, phone: boolean) => (
+    <button
+      key={key}
+      type="button"
+      data-partner-tile={phone ? "" : undefined}
+      onClick={() => setDetail(shop)}
+      title={`${shop.shop_name} — ${shop.discount_percent}% discount`}
+      className={
+        phone
+          ? "group snap-start shrink-0 w-40 h-40 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2.5 px-3 cursor-pointer"
+          : "group w-full h-32 sm:h-36 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-0.5 hover:border-emerald-400 dark:hover:border-emerald-600 transition-all flex flex-col items-center justify-center gap-2.5 px-3 cursor-pointer"
+      }
+    >
+      {shop.profile_picture ? (
+        <img
+          src={shop.profile_picture}
+          alt={`${shop.shop_name} logo`}
+          loading="lazy"
+          decoding="async"
+          className="h-14 w-14 rounded-2xl object-contain"
+        />
+      ) : (
+        <span
+          className="h-14 w-14 rounded-2xl flex items-center justify-center font-black text-lg shrink-0"
+          style={monogramStyle(shop.shop_name)}
+        >
+          {shop.shop_name.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <span className="w-full text-center min-w-0">
+        <span className="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
+          {shop.shop_name}
+        </span>
+        <span className="mt-1 inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-900 px-2 py-0.5 text-[10px] sm:text-xs font-black text-emerald-700 dark:text-emerald-300">
+          {shop.discount_percent}% OFF
+        </span>
+      </span>
+    </button>
+  );
 
   return (
     <section
@@ -156,21 +229,13 @@ export default function PartnerCarousel() {
           )}
         </div>
 
+        {/* Desktop / tablet: four large cards per page width. */}
         <div
-          className="overflow-hidden -mx-2"
+          className="hidden md:block overflow-hidden -mx-2"
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           onFocusCapture={() => setFocused(true)}
           onBlurCapture={() => setFocused(false)}
-          onTouchStart={(e) => {
-            touchStart.current = e.touches[0]?.clientX ?? null;
-          }}
-          onTouchEnd={(e) => {
-            if (touchStart.current === null) return;
-            const delta = (e.changedTouches[0]?.clientX ?? 0) - touchStart.current;
-            if (Math.abs(delta) > 40) go(delta < 0 ? 1 : -1);
-            touchStart.current = null;
-          }}
         >
           <div
             className={`flex ${reducedMotion ? "" : "transition-transform duration-700 ease-out"}`}
@@ -179,7 +244,7 @@ export default function PartnerCarousel() {
             {loading
               ? Array.from({ length: perView }).map((_, i) => (
                   <div key={`sk-${i}`} style={{ flex: `0 0 ${100 / perView}%` }} className="px-2">
-                    <div className="h-24 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
+                    <div className="h-36 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
                   </div>
                 ))
               : tiles.map((shop, tileIndex) => (
@@ -188,43 +253,38 @@ export default function PartnerCarousel() {
                     style={{ flex: `0 0 ${100 / perView}%` }}
                     className="px-2"
                   >
-                    <button
-                      type="button"
-                      onClick={() => setDetail(shop)}
-                      title={`${shop.shop_name} — ${shop.discount_percent}% discount`}
-                      className="group w-full h-24 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-800 transition-all flex flex-col items-center justify-center gap-2 px-3 cursor-pointer"
-                    >
-                      {shop.profile_picture ? (
-                        <img
-                          src={shop.profile_picture}
-                          alt={`${shop.shop_name} logo`}
-                          loading="lazy"
-                          decoding="async"
-                          className="h-10 w-10 rounded-xl object-contain"
-                        />
-                      ) : (
-                        <span
-                          className="h-10 w-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0"
-                          style={monogramStyle(shop.shop_name)}
-                        >
-                          {shop.shop_name.charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                      <span className="w-full text-center">
-                        <span className="block text-[11px] font-bold text-slate-700 dark:text-slate-200 truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
-                          {shop.shop_name}
-                        </span>
-                        <span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                          {shop.discount_percent}% off
-                        </span>
-                      </span>
-                    </button>
+                    {renderTile(shop, `${shop.id}-${tileIndex}`, false)}
                   </div>
                 ))}
           </div>
         </div>
 
-        {partners.length > 1 && partners.length <= 12 && (
+        {/* Mobile: auto-width cards laid out inline in a swipeable row. */}
+        <div
+          ref={mobileTrack}
+          className="md:hidden -mx-4 px-4 flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onFocusCapture={() => setFocused(true)}
+          onBlurCapture={() => setFocused(false)}
+          onTouchStart={(e) => {
+            setHovered(true);
+            touchStart.current = e.touches[0]?.clientX ?? null;
+          }}
+          onTouchEnd={() => {
+            setHovered(false);
+            touchStart.current = null;
+          }}
+        >
+          {loading
+            ? Array.from({ length: 3 }).map((_, i) => (
+                <div
+                  key={`msk-${i}`}
+                  className="shrink-0 w-40 h-40 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse"
+                />
+              ))
+            : partners.map((shop) => renderTile(shop, `m-${shop.id}`, true))}
+        </div>
+
+        {!isPhone && partners.length > 1 && partners.length <= 12 && (
           <div className="flex items-center justify-center gap-1.5 mt-5">
             {Array.from({ length: maxIndex + 1 }).map((_, i) => (
               <button
