@@ -10,7 +10,7 @@ import {
   Store, Camera, RefreshCw, ShoppingBag, CheckCircle2, AlertTriangle,
   User, Users, DollarSign, Tag, TrendingUp, History, Upload, UserCheck,
   Search, Filter, ArrowUpDown, FileText, Printer, LayoutDashboard, Settings, BarChart3,
-  Mail, Lock, Eye, EyeOff, ImageIcon, XCircle, Menu,
+  Mail, Lock, Eye, EyeOff, ImageIcon, XCircle, Menu, QrCode,
 } from './AdminIcons';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import ThemeToggle from './ThemeToggle';
@@ -1183,27 +1183,6 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
       <div className="space-y-6">
         {activeTab === 'dashboard' && (
           <div className="space-y-6" id="shop-dashboard-tab">
-            {/* SCAN CARD CTA — opens the scanner popup; the filled form appears below */}
-            <button
-              onClick={() => setScanModalOpen(true)}
-              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-2xl p-5 flex items-center gap-4 text-left shadow-sm transition-all cursor-pointer"
-            >
-              <span className="p-3 rounded-2xl bg-white/15 border border-white/20 shrink-0">
-                <Camera className="w-6 h-6" />
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-base font-black tracking-tight">
-                  Scan Card
-                </span>
-                <span className="block text-xs text-emerald-50/90">
-                  Open the scanner popup to fill the discount form instantly
-                </span>
-              </span>
-              <span className="px-3 py-1.5 bg-white/15 border border-white/20 rounded-xl text-[11px] font-black uppercase tracking-wider shrink-0">
-                Open
-              </span>
-            </button>
-
             {/* SCANNER POPUP — scan here, then the filled discount form appears below */}
             {scanModalOpen && (
             <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -2130,6 +2109,31 @@ export default function ShopDashboard({ shopUser, onLogout }: { shopUser: { id: 
           </div>
         )}
       </div>
+
+      {/* Keep the last rows clear of the floating scan button */}
+      {activeTab === 'dashboard' && <div className="h-24" aria-hidden="true" />}
+
+      {/* FLOATING SCAN ACTION — bottom center, transparent wrapper with a QR
+          tile and label so it does not cover the page with a green panel. */}
+      {activeTab === 'dashboard' && (
+        <button
+          type="button"
+          onClick={() => setScanModalOpen(true)}
+          aria-label="Scan card"
+          title="Scan card"
+          className="group fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1.5 bg-transparent border-0 p-0 cursor-pointer"
+        >
+          <span
+            className="flex h-16 w-16 items-center justify-center rounded-[1.35rem] text-white shadow-lg shadow-indigo-500/40 ring-1 ring-white/25 transition-transform duration-150 group-hover:-translate-y-0.5 group-active:scale-95"
+            style={{ background: "linear-gradient(135deg, #9a9cf5 0%, #6d6ff2 45%, #4f46e5 100%)" }}
+          >
+            <QrCode className="w-8 h-8" />
+          </span>
+          <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-100 drop-shadow-[0_1px_4px_rgba(0,0,0,0.35)]">
+            Scan card
+          </span>
+        </button>
+      )}
 
     </div>
   );
