@@ -77,8 +77,7 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
   // flashes for the whole duration of the lookup (seconds on a cold start).
   const isExternalCardEntry = entryMode.externalCard && !entryMode.terminal;
   // A guest opening /scan (no card link, no terminal flag) should land on the
-  // partner directory — the internal shop terminal is not for them. The
-  // directory's "Scan another" button still opens the camera scanner.
+  // partner directory — the internal shop terminal is not for them.
   const guestPartnersEntry = !isShopSession && !entryMode.terminal;
   const [showPartners, setShowPartners] = useState(isExternalCardEntry || guestPartnersEntry);
   // True while the external card lookup is still in flight; the partner page
@@ -863,9 +862,11 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
             <span>Home</span>
           </a>
           <div className="flex items-center gap-2">
-            <a href="/login" className="px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all">
-              Partner Login
-            </a>
+            {!partnersPageVisible && (
+              <a href="/login" className="px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all">
+                Partner Login
+              </a>
+            )}
             <ThemeToggle />
           </div>
         </div>
@@ -1038,17 +1039,6 @@ export default function CustomerPortal({ onNewSale }: { onNewSale?: () => void }
       {partnersPageVisible ? (
           <>
           <div id="member-partners-panel" className="space-y-6 scroll-mt-6">
-            {/* Scan another (replaces the removed verified-member banner) */}
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => { setShowPartners(false); setScannedCustomer(null); setScanDone(false); setCardPinVerified(false); setPinPurpose('guest'); }}
-                className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[11px] font-bold uppercase tracking-wider cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-700"
-              >
-                Scan another
-              </button>
-            </div>
-
             {/* Partner directory */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 md:p-6">
               <div className="flex items-center gap-3 mb-4">
