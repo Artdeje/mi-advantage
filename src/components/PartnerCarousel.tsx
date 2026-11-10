@@ -41,7 +41,7 @@ function monogramStyle(name: string): React.CSSProperties {
  * pauses on hover/focus and when the tab is hidden, and falls back to a static
  * track for users who prefer reduced motion.
  */
-export default function PartnerCarousel() {
+export default function PartnerCarousel({ overArtwork = false }: { overArtwork?: boolean }) {
   const [partners, setPartners] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
   const [index, setIndex] = useState(0);
@@ -219,18 +219,36 @@ export default function PartnerCarousel() {
   return (
     <section
       aria-label="Partner shops"
-      className="relative z-10 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur border-y border-slate-200 dark:border-slate-800"
+      className="relative z-10 w-full"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">
+            <p
+              className={
+                overArtwork
+                  ? "text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300 drop-shadow-[0_1px_6px_rgba(0,0,0,0.7)]"
+                  : "text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400"
+              }
+            >
               Our partner network
             </p>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+            <h2
+              className={
+                overArtwork
+                  ? "text-xl sm:text-2xl font-black text-white tracking-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.65)]"
+                  : "text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight"
+              }
+            >
               {loading ? "Loading partner shops…" : `${partners.length} partner shop${partners.length === 1 ? "" : "s"}`}
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+            <p
+              className={
+                overArtwork
+                  ? "text-xs sm:text-sm text-slate-200/90 mt-1 drop-shadow-[0_1px_6px_rgba(0,0,0,0.7)]"
+                  : "text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1"
+              }
+            >
               Show your member card at any of these outlets and save instantly.
             </p>
           </div>

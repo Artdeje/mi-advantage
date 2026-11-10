@@ -177,7 +177,7 @@ export default function WelcomePage() {
         </div>
       </main>
 
-      <PartnerCarousel />
+      <PartnerCarousel overArtwork={showArtwork} />
 
       {/* FOOTER */}
       <footer className="relative z-20 border-t border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur">
