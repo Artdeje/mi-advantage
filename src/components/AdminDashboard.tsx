@@ -155,6 +155,91 @@ const CUSTOMER_KEY_FIELDS: (keyof Customer)[] = [
 ];
 const LOG_KEY_FIELDS: (keyof AuditLog)[] = ["action", "details"];
 
+// One editable branding feature: read-only until its pencil button is clicked,
+// then the fields unlock and a Save action appears. Every save is routed
+// through a confirmation dialog before it reaches the database.
+function BrandingSection({
+  title,
+  description,
+  editing,
+  onEdit,
+  onCancel,
+  onSave,
+  children,
+  className = "",
+}: {
+  title: string;
+  description?: string;
+  editing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`rounded-2xl border p-4 transition-colors ${
+        editing
+          ? "border-emerald-300 dark:border-emerald-700 bg-emerald-50/40 dark:bg-emerald-950/10"
+          : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40"
+      } ${className}`}
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200">{title}</h4>
+          {description && (
+            <p className="text-[10px] text-slate-400 mt-0.5">{description}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {editing ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              Editing
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={`Edit ${title}`}
+              title={`Edit ${title}`}
+              className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-400 dark:hover:border-emerald-600 cursor-pointer transition-colors"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+      <fieldset
+        disabled={!editing}
+        className={`min-w-0 border-0 p-0 m-0 transition-opacity ${
+          editing ? "opacity-100" : "opacity-70"
+        }`}
+      >
+        {children}
+      </fieldset>
+      {editing && (
+        <div className="flex items-center justify-end gap-2 mt-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-[10px] font-bold uppercase tracking-wider cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+          >
+            Save
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AdminDashboard({
   onCustomizationChange,
   onLogout,
@@ -287,6 +372,14 @@ export default function AdminDashboard({
   const [loginBgType, setLoginBgType] = useState("gradient");
   const [loginBgValue, setLoginBgValue] = useState("linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)");
   const [customCss, setCustomCss] = useState("");
+
+  // Branding edit mode: which feature card is unlocked, and the pending save
+  // waiting for the confirmation dialog.
+  const [editingBrandingSection, setEditingBrandingSection] = useState<string | null>(null);
+  const [pendingBrandingSave, setPendingBrandingSave] = useState<{
+    label: string;
+    run: () => Promise<boolean>;
+  } | null>(null);
 
   // Selected customer for card download preview modal
   const [selectedCardCustomer, setSelectedCardCustomer] =
@@ -843,42 +936,107 @@ export default function AdminDashboard({
   };
 
   // Update Global Configurations Theme / Logo - individual field saves
-  const saveBrandingField = async (updates: Partial<Customization>, label: string) => {
+  const saveBrandingField = async (
+    updates: Partial<Customization>,
+    label: string,
+  ): Promise<boolean> => {
     setBrandingMsg("");
     try {
-      const updated = await db.updateCustomization(updates);
+      await db.updateCustomization(updates);
       const fresh = await db.getCustomization();
+      if (fresh) setCustomization(fresh);
       setBrandingMsg(`${label} saved successfully.`);
       if (onCustomizationChange) onCustomizationChange();
       setTimeout(() => setBrandingMsg(""), 4000);
+      return true;
     } catch {
       setBrandingMsg(`Failed to update ${label}. Please check your database connection.`);
+      return false;
     }
   };
 
-  const saveBrandingBasics = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ title: titleInput, subtitle: subtitleInput }, "Branding basics");
+  // Every branding save goes through this confirmation gate.
+  const requestBrandingSave = (label: string, run: () => Promise<boolean>) => {
+    setPendingBrandingSave({ label, run });
   };
 
-  const saveBrandingTheme = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ theme_color: themeInput }, "Theme accent");
+  const confirmBrandingSave = async () => {
+    const pending = pendingBrandingSave;
+    if (!pending) return;
+    setPendingBrandingSave(null);
+    const ok = await pending.run();
+    if (ok) setEditingBrandingSection(null);
   };
 
-  const saveBrandingLogo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ logo_url: logoInput }, "Logo");
+  // Cancel discards unsaved edits by reseeding every branding input from the
+  // last saved customization.
+  const cancelBrandingEdit = () => {
+    const c = customization || ({} as Customization);
+    setTitleInput(c.title || "");
+    setSubtitleInput(c.subtitle || "");
+    setScanTitleInput(c.scan_title || "");
+    setScanSubtitleInput(c.scan_subtitle || "");
+    setThemeInput(c.theme_color || "green");
+    setLogoInput(c.logo_url || "");
+    setFaviconInput(c.favicon_url || "");
+    setCardBrandInput(c.card_brand || "");
+    setCardWordmarkInput(c.card_wordmark || "");
+    setCardLogoInput(c.card_logo_url || "");
+    setH1Input(c.home_h1 || "");
+    setH2Input(c.home_h2 || "");
+    setPInput(c.home_p || "");
+    setLoginHeading(c.login_heading || "");
+    setLoginSubtext(c.login_subtext || "");
+    setSignupHeading(c.signup_heading || "");
+    setSignupSubtext(c.signup_subtext || "");
+    setFooterText(c.footer_text || "");
+    setFooterSubtext(c.footer_subtext || "");
+    setHomeBgType(c.home_background_type || "none");
+    setHomeBgValue(c.home_background_value || "");
+    setPrimaryColor(c.primary_color || "#059669");
+    setSecondaryColor(c.secondary_color || "#0d9488");
+    setAccentColor(c.accent_color || "#f59e0b");
+    setBgColor(c.background_color || "#f8fafc");
+    setFontFamily(c.font_family || "Inter");
+    setHeadingFont(c.heading_font || "Space Grotesk");
+    setLoginBgType(c.login_background_type || "gradient");
+    setLoginBgValue(c.login_background_value || "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)");
+    setCustomCss(c.custom_css || "");
+    setEditingBrandingSection(null);
   };
 
-  const saveBrandingFavicon = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ favicon_url: faviconInput.trim() }, "Favicon");
+  // Open one feature for editing; switching features discards the previous
+  // feature's unsaved edits so the form always mirrors the saved values.
+  const startBrandingEdit = (key: string) => {
+    if (editingBrandingSection && editingBrandingSection !== key) {
+      cancelBrandingEdit();
+    }
+    setEditingBrandingSection(key);
   };
 
-  const saveBrandingCard = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField(
+  const saveBrandingBasics = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ title: titleInput, subtitle: subtitleInput }, "Branding basics");
+  };
+
+  const saveBrandingTheme = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ theme_color: themeInput }, "Theme accent");
+  };
+
+  const saveBrandingLogo = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ logo_url: logoInput }, "Logo");
+  };
+
+  const saveBrandingFavicon = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ favicon_url: faviconInput.trim() }, "Favicon");
+  };
+
+  const saveBrandingCard = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField(
       {
         card_brand: cardBrandInput.trim().toUpperCase(),
         card_wordmark: cardWordmarkInput.trim(),
@@ -888,39 +1046,39 @@ export default function AdminDashboard({
     );
   };
 
-  const saveBrandingHomepage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ home_h1: h1Input, home_h2: h2Input, home_p: pInput }, "Homepage content");
+  const saveBrandingHomepage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ home_h1: h1Input, home_h2: h2Input, home_p: pInput }, "Homepage content");
   };
 
-  const saveBrandingScanTerminal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ scan_title: scanTitleInput, scan_subtitle: scanSubtitleInput }, "Scan terminal content");
+  const saveBrandingScanTerminal = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ scan_title: scanTitleInput, scan_subtitle: scanSubtitleInput }, "Scan terminal content");
   };
 
-  const saveBrandingBg = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ home_background_type: homeBgType, home_background_value: homeBgValue }, "Background");
+  const saveBrandingBg = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ home_background_type: homeBgType, home_background_value: homeBgValue }, "Background");
   };
 
-  const saveBrandingLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ login_heading: loginHeading, login_subtext: loginSubtext }, "Login form");
+  const saveBrandingLogin = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ login_heading: loginHeading, login_subtext: loginSubtext }, "Login form");
   };
 
-  const saveBrandingSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ signup_heading: signupHeading, signup_subtext: signupSubtext }, "Signup form");
+  const saveBrandingSignup = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ signup_heading: signupHeading, signup_subtext: signupSubtext }, "Signup form");
   };
 
-  const saveBrandingFooter = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ footer_text: footerText, footer_subtext: footerSubtext }, "Footer");
+  const saveBrandingFooter = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ footer_text: footerText, footer_subtext: footerSubtext }, "Footer");
   };
 
-  const saveBrandingColors = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({
+  const saveBrandingColors = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({
       primary_color: primaryColor,
       secondary_color: secondaryColor,
       accent_color: accentColor,
@@ -928,19 +1086,19 @@ export default function AdminDashboard({
     }, "Brand colors");
   };
 
-  const saveBrandingTypography = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ font_family: fontFamily, heading_font: headingFont }, "Typography");
+  const saveBrandingTypography = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ font_family: fontFamily, heading_font: headingFont }, "Typography");
   };
 
-  const saveBrandingLoginBg = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ login_background_type: loginBgType, login_background_value: loginBgValue }, "Login background");
+  const saveBrandingLoginBg = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ login_background_type: loginBgType, login_background_value: loginBgValue }, "Login background");
   };
 
-  const saveBrandingCustomCss = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await saveBrandingField({ custom_css: customCss }, "Custom CSS");
+  const saveBrandingCustomCss = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    return await saveBrandingField({ custom_css: customCss }, "Custom CSS");
   };
 
   const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3316,379 +3474,354 @@ export default function AdminDashboard({
               )}
             </div>
 
-            {/* ROW 1: Title + Theme + Logo */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-1">
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Platform Title</label>
-                  <div className="flex flex-col gap-2">
-                    <input type="text" value={titleInput} onChange={(e) => setTitleInput(e.target.value)} placeholder="e.g. Mi Advantage" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    <button
-                      type="button"
-                      onClick={saveBrandingBasics}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Title
-                    </button>
+            {/* Feature cards — each one unlocks through its pencil button */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+              <BrandingSection
+                title="Platform Identity"
+                description="Title and subtitle shown across the portal."
+                editing={editingBrandingSection === "identity"}
+                onEdit={() => startBrandingEdit("identity")}
+                onCancel={cancelBrandingEdit}
+                onSave={() => requestBrandingSave("Platform identity", saveBrandingBasics)}
+              >
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Platform Title</label>
+                    <input type="text" value={titleInput} onChange={(e) => setTitleInput(e.target.value)} placeholder="e.g. Mi Advantage" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-1">Shown across the portal, dashboards, and member cards.</p>
-                </div>
-                <div className="lg:col-span-1">
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Platform Subtitle</label>
-                  <input type="text" value={subtitleInput} onChange={(e) => setSubtitleInput(e.target.value)} placeholder="e.g. Member Privilege Program" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                  <p className="text-[10px] text-slate-400 mt-1">Line under the title in the nav bar and on member cards.</p>
-                </div>
-                <div className="lg:col-span-1">
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Theme Accent</label>
-                  <div className="flex flex-col gap-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { id: "green", label: "Green", bg: "bg-green-600" },
-                        { id: "emerald", label: "Emerald", bg: "bg-emerald-500" },
-                        { id: "teal", label: "Teal", bg: "bg-teal-600" },
-                        { id: "dark-green", label: "Dark", bg: "bg-emerald-950" },
-                      ].map((theme) => (
-                        <button key={theme.id} type="button" onClick={() => setThemeInput(theme.id as any)}
-                          className={`p-2 rounded-lg border text-left flex items-center gap-2 text-xs cursor-pointer transition-all ${themeInput === theme.id ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 font-bold" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
-                          <span className={`w-4 h-4 rounded-full ${theme.bg}`} />
-                          <span>{theme.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={saveBrandingTheme}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Theme
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1">Applied across buttons, links, and accents.</p>
-                </div>
-                <div className="lg:col-span-1">
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Company Logo</label>
-                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
-                    <div className="w-14 h-14 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
-                      {logoInput ? <img src={logoInput} alt="Logo" className="w-full h-full object-contain" /> : <ImageIcon className="w-6 h-6 text-slate-400" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      {currentAdminRole === "super_admin" ? (
-                        <>
-                          <input type="file" accept="image/*" onChange={handleLogoFileChange} className="hidden" id="admin-logo-upload" />
-                          <label htmlFor="admin-logo-upload" className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block">Upload Logo</label>
-                          <button
-                            type="button"
-                            onClick={saveBrandingLogo}
-                            className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                          >
-                            Save Logo
-                          </button>
-                          <p className="text-[10px] text-slate-400 mt-1">PNG with transparency recommended</p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-slate-400">Super Admin can change logo</p>
-                      )}
-                    </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Platform Subtitle</label>
+                    <input type="text" value={subtitleInput} onChange={(e) => setSubtitleInput(e.target.value)} placeholder="e.g. Member Privilege Program" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                 </div>
-                <div className="lg:col-span-1">
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Site Favicon</label>
-                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
-                    <div className="w-14 h-14 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
-                      {faviconInput ? <img src={faviconInput} alt="Favicon" className="w-8 h-8 object-contain" /> : <ImageIcon className="w-6 h-6 text-slate-400" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      {currentAdminRole === "super_admin" ? (
-                        <>
-                          <input type="file" accept="image/*" onChange={handleFaviconFileChange} className="hidden" id="admin-favicon-upload" />
-                          <label htmlFor="admin-favicon-upload" className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block">Upload Icon</label>
-                          <input
-                            type="text"
-                            value={faviconInput}
-                            onChange={(e) => setFaviconInput(e.target.value)}
-                            placeholder="…or paste image URL"
-                            className="mt-2 w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={saveBrandingFavicon}
-                            className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                          >
-                            Save Favicon
-                          </button>
-                          <p className="text-[10px] text-slate-400 mt-1">Square PNG/ICO — shown in the browser tab</p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-slate-400">Super Admin can change favicon</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </BrandingSection>
 
-              {/* ROW 1b: Member Card Branding */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Member Card Branding
-                </h4>
-                <p className="text-[10px] text-slate-400 mb-4">
-                  These values are printed on both faces of the member card.
-                </p>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="lg:col-span-1">
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                      Card Monogram
-                    </label>
-                    <input
-                      type="text"
-                      value={cardBrandInput}
-                      onChange={(e) => setCardBrandInput(e.target.value.toUpperCase())}
-                      placeholder="BP"
-                      maxLength={4}
-                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Short prefix printed on the card, e.g. &quot;BP 010&quot;. Leave empty to
-                      derive it from the platform title.
-                    </p>
+              <BrandingSection
+                title="Theme Accent"
+                description="Applied across buttons, links, and accents."
+                editing={editingBrandingSection === "theme"}
+                onEdit={() => startBrandingEdit("theme")}
+                onCancel={cancelBrandingEdit}
+                onSave={() => requestBrandingSave("Theme accent", saveBrandingTheme)}
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "green", label: "Green", bg: "bg-green-600" },
+                    { id: "emerald", label: "Emerald", bg: "bg-emerald-500" },
+                    { id: "teal", label: "Teal", bg: "bg-teal-600" },
+                    { id: "dark-green", label: "Dark", bg: "bg-emerald-950" },
+                  ].map((theme) => (
+                    <button key={theme.id} type="button" onClick={() => setThemeInput(theme.id as any)}
+                      className={`p-2 rounded-lg border text-left flex items-center gap-2 text-xs cursor-pointer transition-all ${themeInput === theme.id ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 font-bold" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
+                      <span className={`w-4 h-4 rounded-full ${theme.bg}`} />
+                      <span>{theme.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </BrandingSection>
+
+              <BrandingSection
+                title="Company Logo"
+                description="PNG with transparency recommended."
+                editing={editingBrandingSection === "logo"}
+                onEdit={() => startBrandingEdit("logo")}
+                onCancel={cancelBrandingEdit}
+                onSave={() => requestBrandingSave("Logo", saveBrandingLogo)}
+              >
+                <div className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
+                  <div className="w-14 h-14 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                    {logoInput ? <img src={logoInput} alt="Logo" className="w-full h-full object-contain" /> : <ImageIcon className="w-6 h-6 text-slate-400" />}
                   </div>
-                  <div className="lg:col-span-1">
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                      Card Wordmark
-                    </label>
-                    <input
-                      type="text"
-                      value={cardWordmarkInput}
-                      onChange={(e) => setCardWordmarkInput(e.target.value)}
-                      placeholder="MY BRAND"
-                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Top-left wordmark on the card front.
-                    </p>
+                  <div className="flex-1 min-w-0">
+                    {currentAdminRole === "super_admin" ? (
+                      <>
+                        <input type="file" accept="image/*" onChange={handleLogoFileChange} className="hidden" id="admin-logo-upload" />
+                        <label htmlFor="admin-logo-upload" className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block">Upload Logo</label>
+                      </>
+                    ) : (
+                      <p className="text-xs text-slate-400">Super Admin can change logo</p>
+                    )}
                   </div>
-                  <div className="lg:col-span-2">
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                      Card Logo
-                    </label>
-                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
-                      <div className="w-14 h-14 bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
-                        {cardLogoInput ? (
-                          <img src={cardLogoInput} alt="Card logo" className="w-full h-full object-contain" />
-                        ) : (
-                          <span
-                            className="font-black italic text-lg"
-                            style={{
-                              background: "linear-gradient(135deg, #fff2cf 0%, #e8b13a 40%, #b07c1c 70%, #ffd98a 100%)",
-                              WebkitBackgroundClip: "text",
-                              backgroundClip: "text",
-                              color: "transparent",
-                            }}
-                          >
-                            {cardBrand || "MA"}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleCardLogoFileChange}
-                          className="hidden"
-                          id="admin-card-logo-upload"
-                        />
-                        <label
-                          htmlFor="admin-card-logo-upload"
-                          className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block"
-                        >
-                          Upload Card Logo
-                        </label>
+                </div>
+              </BrandingSection>
+
+              <BrandingSection
+                title="Site Favicon"
+                description="Square PNG/ICO — shown in the browser tab."
+                editing={editingBrandingSection === "favicon"}
+                onEdit={() => startBrandingEdit("favicon")}
+                onCancel={cancelBrandingEdit}
+                onSave={() => requestBrandingSave("Favicon", saveBrandingFavicon)}
+              >
+                <div className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
+                  <div className="w-14 h-14 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                    {faviconInput ? <img src={faviconInput} alt="Favicon" className="w-8 h-8 object-contain" /> : <ImageIcon className="w-6 h-6 text-slate-400" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {currentAdminRole === "super_admin" ? (
+                      <>
+                        <input type="file" accept="image/*" onChange={handleFaviconFileChange} className="hidden" id="admin-favicon-upload" />
+                        <label htmlFor="admin-favicon-upload" className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block">Upload Icon</label>
                         <input
                           type="text"
-                          value={cardLogoInput.startsWith("data:") ? "" : cardLogoInput}
-                          onChange={(e) => setCardLogoInput(e.target.value)}
+                          value={faviconInput}
+                          onChange={(e) => setFaviconInput(e.target.value)}
                           placeholder="…or paste image URL"
                           className="mt-2 w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
-                        <button
-                          type="button"
-                          onClick={saveBrandingCard}
-                          className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                      </>
+                    ) : (
+                      <p className="text-xs text-slate-400">Super Admin can change favicon</p>
+                    )}
+                  </div>
+                </div>
+              </BrandingSection>
+            </div>
+
+            <BrandingSection
+              className="mt-4"
+              title="Member Card Branding"
+              description="These values are printed on both faces of the member card."
+              editing={editingBrandingSection === "card"}
+              onEdit={() => startBrandingEdit("card")}
+              onCancel={cancelBrandingEdit}
+              onSave={() => requestBrandingSave("Member card branding", saveBrandingCard)}
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Monogram</label>
+                  <input
+                    type="text"
+                    value={cardBrandInput}
+                    onChange={(e) => setCardBrandInput(e.target.value.toUpperCase())}
+                    placeholder="BP"
+                    maxLength={4}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Short prefix printed on the card, e.g. &quot;BP 010&quot;. Leave empty to
+                    derive it from the platform title.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Wordmark</label>
+                  <input
+                    type="text"
+                    value={cardWordmarkInput}
+                    onChange={(e) => setCardWordmarkInput(e.target.value)}
+                    placeholder="MY BRAND"
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Top-left wordmark on the card front.</p>
+                </div>
+                <div className="lg:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Logo</label>
+                  <div className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
+                    <div className="w-14 h-14 bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                      {cardLogoInput ? (
+                        <img src={cardLogoInput} alt="Card logo" className="w-full h-full object-contain" />
+                      ) : (
+                        <span
+                          className="font-black italic text-lg"
+                          style={{
+                            background: "linear-gradient(135deg, #fff2cf 0%, #e8b13a 40%, #b07c1c 70%, #ffd98a 100%)",
+                            WebkitBackgroundClip: "text",
+                            backgroundClip: "text",
+                            color: "transparent",
+                          }}
                         >
-                          Save Card Branding
-                        </button>
-                        <p className="text-[10px] text-slate-400 mt-1">
-                          Printed on the card front. Leave empty to use the gold monogram.
-                        </p>
-                      </div>
+                          {cardBrand || "MA"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCardLogoFileChange}
+                        className="hidden"
+                        id="admin-card-logo-upload"
+                      />
+                      <label
+                        htmlFor="admin-card-logo-upload"
+                        className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block"
+                      >
+                        Upload Card Logo
+                      </label>
+                      <input
+                        type="text"
+                        value={cardLogoInput.startsWith("data:") ? "" : cardLogoInput}
+                        onChange={(e) => setCardLogoInput(e.target.value)}
+                        placeholder="…or paste image URL"
+                        className="mt-2 w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Printed on the card front. Leave empty to use the gold monogram.
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
+            </BrandingSection>
 
-
-              {/* ROW 2: Homepage Content */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Homepage Content</h4>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <BrandingSection
+                title="Homepage Content"
+                description="Headline and paragraph shown on the landing page."
+                editing={editingBrandingSection === "home"}
+                onEdit={() => startBrandingEdit("home")}
+                onCancel={cancelBrandingEdit}
+                onSave={() => requestBrandingSave("Homepage content", saveBrandingHomepage)}
+              >
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Heading H1</label>
-                    <input type="text" value={h1Input} onChange={(e) => setH1Input(e.target.value)} placeholder="e.g. Instant Merchant Discounts" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Heading H1</label>
+                    <input type="text" value={h1Input} onChange={(e) => setH1Input(e.target.value)} placeholder="e.g. Instant Merchant Discounts" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Subheading H2</label>
-                    <input type="text" value={h2Input} onChange={(e) => setH2Input(e.target.value)} placeholder="e.g. QR Member Advantage System" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Subheading H2</label>
+                    <input type="text" value={h2Input} onChange={(e) => setH2Input(e.target.value)} placeholder="e.g. QR Member Advantage System" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
-                  <div className="lg:col-span-2">
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Paragraph Description</label>
-                    <textarea rows={2} value={pInput} onChange={(e) => setPInput(e.target.value)} placeholder="e.g. Scan your digital member card..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                  </div>
-                  <div className="lg:col-span-2">
-                    <button
-                      type="button"
-                      onClick={saveBrandingHomepage}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Homepage Content
-                    </button>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Paragraph Description</label>
+                    <textarea rows={2} value={pInput} onChange={(e) => setPInput(e.target.value)} placeholder="e.g. Scan your digital member card..." className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                 </div>
-              </div>
+              </BrandingSection>
 
-              {/* ROW 2A: Scan Terminal heading (CustomerPortal header) */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Scan Terminal Content</h4>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <BrandingSection
+                title="Scan Terminal Content"
+                description="Heading shown on the customer scan terminal."
+                editing={editingBrandingSection === "scan"}
+                onEdit={() => startBrandingEdit("scan")}
+                onCancel={cancelBrandingEdit}
+                onSave={() => requestBrandingSave("Scan terminal content", saveBrandingScanTerminal)}
+              >
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Terminal Heading</label>
-                    <input type="text" value={scanTitleInput} onChange={(e) => setScanTitleInput(e.target.value)} placeholder="e.g. Member Scan & Loyalty Terminal" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Terminal Heading</label>
+                    <input type="text" value={scanTitleInput} onChange={(e) => setScanTitleInput(e.target.value)} placeholder="e.g. Member Scan & Loyalty Terminal" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Terminal Subtitle</label>
-                    <input type="text" value={scanSubtitleInput} onChange={(e) => setScanSubtitleInput(e.target.value)} placeholder="e.g. Scan customer membership cards in real-time" className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                  </div>
-                  <div className="lg:col-span-2">
-                    <button
-                      type="button"
-                      onClick={saveBrandingScanTerminal}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Scan Terminal Content
-                    </button>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Terminal Subtitle</label>
+                    <input type="text" value={scanSubtitleInput} onChange={(e) => setScanSubtitleInput(e.target.value)} placeholder="e.g. Scan customer membership cards in real-time" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                 </div>
-              </div>
+              </BrandingSection>
+            </div>
 
-              {/* ROW 2C: Landing Page Background */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Landing Page Background</h4>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Background Type</label>
-                    <select value={homeBgType} onChange={(e) => setHomeBgType(e.target.value as "none" | "image" | "gradient")} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
-                      <option value="none">Default card artwork</option>
-                      <option value="image">Custom image</option>
-                      <option value="gradient">Custom gradient</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">{homeBgType === "image" ? "Image URL" : "Gradient Value"}</label>
-                    <input
-                      type={homeBgType === "image" ? "url" : "text"}
-                      value={homeBgValue}
-                      onChange={(e) => setHomeBgValue(e.target.value)}
-                      placeholder={homeBgType === "image" ? "https://example.com/person-scanning-card.jpg" : "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)"}
-                      className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={saveBrandingBg}
-                      className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Background
-                    </button>
-                  </div>
+            <BrandingSection
+              className="mt-4"
+              title="Landing Page Background"
+              description="The artwork fills the whole home page — no content cards are laid over it."
+              editing={editingBrandingSection === "background"}
+              onEdit={() => startBrandingEdit("background")}
+              onCancel={cancelBrandingEdit}
+              onSave={() => requestBrandingSave("Background", saveBrandingBg)}
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Background Type</label>
+                  <select value={homeBgType} onChange={(e) => setHomeBgType(e.target.value as "none" | "image" | "gradient")} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
+                    <option value="none">Default card artwork</option>
+                    <option value="image">Custom image</option>
+                    <option value="gradient">Custom gradient</option>
+                  </select>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  The artwork fills the whole home page — no content cards are laid over it.
-                  Choose &quot;Default card artwork&quot; for the built-in card-themed design, or
-                  point &quot;Custom image&quot; at your own photo.
-                </p>
-              </div>
-
-              {/* ROW 3: Login/Signup + Footer */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Login & Signup Forms</h4>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Login Heading</label>
-                      <input type="text" value={loginHeading} onChange={(e) => setLoginHeading(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Login Subtext</label>
-                      <input type="text" value={loginSubtext} onChange={(e) => setLoginSubtext(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={saveBrandingLogin}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Login Form
-                    </button>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Signup Heading</label>
-                      <input type="text" value={signupHeading} onChange={(e) => setSignupHeading(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Signup Subtext</label>
-                      <input type="text" value={signupSubtext} onChange={(e) => setSignupSubtext(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={saveBrandingSignup}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Signup Form
-                    </button>
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">{homeBgType === "image" ? "Image URL" : "Gradient Value"}</label>
+                  <input
+                    type={homeBgType === "image" ? "url" : "text"}
+                    value={homeBgValue}
+                    onChange={(e) => setHomeBgValue(e.target.value)}
+                    placeholder={homeBgType === "image" ? "https://example.com/person-scanning-card.jpg" : "linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)"}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm"
+                  />
                 </div>
               </div>
+              <p className="text-[10px] text-slate-400 mt-2">
+                Choose &quot;Default card artwork&quot; for the built-in card-themed design, or
+                point &quot;Custom image&quot; at your own photo.
+              </p>
+            </BrandingSection>
 
-              {/* ROW 4: Footer */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4">Footer Content</h4>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <BrandingSection
+                title="Login Form"
+                description="Heading and subtext above the partner login form."
+                editing={editingBrandingSection === "login"}
+                onEdit={() => startBrandingEdit("login")}
+                onCancel={cancelBrandingEdit}
+                onSave={() => requestBrandingSave("Login form", saveBrandingLogin)}
+              >
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Footer Text</label>
-                    <input type="text" value={footerText} onChange={(e) => setFooterText(e.target.value)} placeholder="© 2026 Mi Advantage" className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Login Heading</label>
+                    <input type="text" value={loginHeading} onChange={(e) => setLoginHeading(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Footer Subtext</label>
-                    <input type="text" value={footerSubtext} onChange={(e) => setFooterSubtext(e.target.value)} placeholder="Secure Connection • Your City" className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                  </div>
-                  <div className="lg:col-span-2">
-                    <button
-                      type="button"
-                      onClick={saveBrandingFooter}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      Save Footer
-                    </button>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Login Subtext</label>
+                    <input type="text" value={loginSubtext} onChange={(e) => setLoginSubtext(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                 </div>
-              </div>
+              </BrandingSection>
 
-              {/* ROW 5: Super Admin Only — Colors, Typography, CSS */}
-              {currentAdminRole === "super_admin" && (
-                <div className="border-t border-slate-200 dark:border-slate-800 pt-6 space-y-6">
-                  <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200">Advanced Branding (Super Admin Only)</h4>
-
-                  {/* Colors */}
+              <BrandingSection
+                title="Signup Form"
+                description="Heading and subtext above the partner signup form."
+                editing={editingBrandingSection === "signup"}
+                onEdit={() => startBrandingEdit("signup")}
+                onCancel={cancelBrandingEdit}
+                onSave={() => requestBrandingSave("Signup form", saveBrandingSignup)}
+              >
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">Brand Colors</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Signup Heading</label>
+                    <input type="text" value={signupHeading} onChange={(e) => setSignupHeading(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Signup Subtext</label>
+                    <input type="text" value={signupSubtext} onChange={(e) => setSignupSubtext(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                </div>
+              </BrandingSection>
+            </div>
+
+            <BrandingSection
+              className="mt-4"
+              title="Footer Content"
+              description="Copyright line and status text at the bottom of the portal."
+              editing={editingBrandingSection === "footer"}
+              onEdit={() => startBrandingEdit("footer")}
+              onCancel={cancelBrandingEdit}
+              onSave={() => requestBrandingSave("Footer", saveBrandingFooter)}
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Footer Text</label>
+                  <input type="text" value={footerText} onChange={(e) => setFooterText(e.target.value)} placeholder="© 2026 Mi Advantage" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Footer Subtext</label>
+                  <input type="text" value={footerSubtext} onChange={(e) => setFooterSubtext(e.target.value)} placeholder="Secure Connection • Your City" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                </div>
+              </div>
+            </BrandingSection>
+
+            {/* Super Admin Only — advanced branding */}
+            {currentAdminRole === "super_admin" && (
+              <div className="mt-6">
+                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-3">Advanced Branding (Super Admin Only)</h4>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <BrandingSection
+                    title="Brand Colors"
+                    description="Primary, secondary, accent and background palette."
+                    editing={editingBrandingSection === "colors"}
+                    onEdit={() => startBrandingEdit("colors")}
+                    onCancel={cancelBrandingEdit}
+                    onSave={() => requestBrandingSave("Brand colors", saveBrandingColors)}
+                  >
+                    <div className="grid grid-cols-2 gap-3">
                       {[
                         { label: "Primary", value: primaryColor, set: setPrimaryColor },
                         { label: "Secondary", value: secondaryColor, set: setSecondaryColor },
@@ -3698,102 +3831,133 @@ export default function AdminDashboard({
                         <div key={c.label} className="min-w-0">
                           <label className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">{c.label}</label>
                           <div className="flex items-center gap-2">
-                            <input type="color" value={c.value} onChange={(e) => c.set(e.target.value)} className="w-10 h-10 shrink-0 rounded border border-slate-200 dark:border-slate-800 cursor-pointer" />
-                            <input type="text" value={c.value} onChange={(e) => c.set(e.target.value)} className="flex-1 min-w-0 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono" />
+                            <input type="color" value={c.value} onChange={(e) => c.set(e.target.value)} className="w-9 h-9 shrink-0 rounded border border-slate-200 dark:border-slate-800 cursor-pointer" />
+                            <input type="text" value={c.value} onChange={(e) => c.set(e.target.value)} className="flex-1 min-w-0 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] font-mono" />
                           </div>
                         </div>
                       ))}
                     </div>
-                    <button
-                      type="button"
-                      onClick={saveBrandingColors}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors mt-2"
-                    >
-                      Save Brand Colors
-                    </button>
-                  </div>
+                  </BrandingSection>
 
-                  {/* Typography */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Base Font</label>
-                      <select value={fontFamily} onChange={(e) => setFontFamily(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
-                        <option value="Inter">Inter</option>
-                        <option value="Roboto">Roboto</option>
-                        <option value="Open Sans">Open Sans</option>
-                        <option value="Lato">Lato</option>
-                        <option value="Poppins">Poppins</option>
-                        <option value="system-ui">System UI</option>
-                      </select>
+                  <BrandingSection
+                    title="Typography"
+                    description="Base and heading font families."
+                    editing={editingBrandingSection === "typography"}
+                    onEdit={() => startBrandingEdit("typography")}
+                    onCancel={cancelBrandingEdit}
+                    onSave={() => requestBrandingSave("Typography", saveBrandingTypography)}
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Base Font</label>
+                        <select value={fontFamily} onChange={(e) => setFontFamily(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
+                          <option value="Inter">Inter</option>
+                          <option value="Roboto">Roboto</option>
+                          <option value="Open Sans">Open Sans</option>
+                          <option value="Lato">Lato</option>
+                          <option value="Poppins">Poppins</option>
+                          <option value="system-ui">System UI</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Heading Font</label>
+                        <select value={headingFont} onChange={(e) => setHeadingFont(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
+                          <option value="Space Grotesk">Space Grotesk</option>
+                          <option value="Inter">Inter</option>
+                          <option value="Montserrat">Montserrat</option>
+                          <option value="Playfair Display">Playfair Display</option>
+                          <option value="Raleway">Raleway</option>
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Heading Font</label>
-                      <select value={headingFont} onChange={(e) => setHeadingFont(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
-                        <option value="Space Grotesk">Space Grotesk</option>
-                        <option value="Inter">Inter</option>
-                        <option value="Montserrat">Montserrat</option>
-                        <option value="Playfair Display">Playfair Display</option>
-                        <option value="Raleway">Raleway</option>
-                      </select>
-                    </div>
-                    <div className="lg:col-span-2">
-                      <button
-                        type="button"
-                        onClick={saveBrandingTypography}
-                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                      >
-                        Save Typography
-                      </button>
-                    </div>
-                  </div>
+                  </BrandingSection>
 
-                  {/* Login Background */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Login Background Type</label>
-                      <select value={loginBgType} onChange={(e) => setLoginBgType(e.target.value)} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
-                        <option value="gradient">Gradient</option>
-                        <option value="solid">Solid Color</option>
-                        <option value="image">Image URL</option>
-                      </select>
+                  <BrandingSection
+                    title="Login Background"
+                    description="Background used behind the login and signup forms."
+                    editing={editingBrandingSection === "loginbg"}
+                    onEdit={() => startBrandingEdit("loginbg")}
+                    onCancel={cancelBrandingEdit}
+                    onSave={() => requestBrandingSave("Login background", saveBrandingLoginBg)}
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Background Type</label>
+                        <select value={loginBgType} onChange={(e) => setLoginBgType(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm">
+                          <option value="gradient">Gradient</option>
+                          <option value="solid">Solid Color</option>
+                          <option value="image">Image URL</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">{loginBgType === "image" ? "Image URL" : "Value"}</label>
+                        {loginBgType === "image" ? (
+                          <input type="url" value={loginBgValue} onChange={(e) => setLoginBgValue(e.target.value)} placeholder="https://example.com/bg.jpg" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm" />
+                        ) : (
+                          <input type="text" value={loginBgValue} onChange={(e) => setLoginBgValue(e.target.value)} placeholder={loginBgType === "gradient" ? "linear-gradient(...)" : "#ffffff"} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-mono" />
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">{loginBgType === "image" ? "Image URL" : "Value"}</label>
-                      {loginBgType === "image" ? (
-                        <input type="url" value={loginBgValue} onChange={(e) => setLoginBgValue(e.target.value)} placeholder="https://example.com/bg.jpg" className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm" />
-                      ) : (
-                        <input type="text" value={loginBgValue} onChange={(e) => setLoginBgValue(e.target.value)} placeholder={loginBgType === "gradient" ? "linear-gradient(...)" : "#ffffff"} className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-mono" />
-                      )}
-                    </div>
-                    <div className="lg:col-span-2">
-                      <button
-                        type="button"
-                        onClick={saveBrandingLoginBg}
-                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                      >
-                        Save Login Background
-                      </button>
-                    </div>
-                  </div>
+                  </BrandingSection>
 
-                  {/* Custom CSS */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Custom CSS</label>
-                    <textarea value={customCss} onChange={(e) => setCustomCss(e.target.value)} rows={4} placeholder=".my-class { color: red; }" className="w-full px-4 py-2 bg-slate-900 text-slate-200 rounded-lg text-xs font-mono" />
-                    <button
-                      type="button"
-                      onClick={saveBrandingCustomCss}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors mt-2"
-                    >
-                      Save Custom CSS
-                    </button>
-                  </div>
+                  <BrandingSection
+                    title="Custom CSS"
+                    description="Extra styles applied to the public portal."
+                    editing={editingBrandingSection === "css"}
+                    onEdit={() => startBrandingEdit("css")}
+                    onCancel={cancelBrandingEdit}
+                    onSave={() => requestBrandingSave("Custom CSS", saveBrandingCustomCss)}
+                  >
+                    <textarea value={customCss} onChange={(e) => setCustomCss(e.target.value)} rows={4} placeholder=".my-class { color: red; }" className="w-full px-3 py-2 bg-slate-900 text-slate-200 rounded-lg text-xs font-mono" />
+                  </BrandingSection>
                 </div>
-              )}
+              </div>
+            )}
+
 
               {brandingMsg && (
                 <div className={`p-4 rounded-xl text-center font-semibold text-sm border ${brandingMsg.includes("Failed") ? "bg-red-50 dark:bg-red-950/50 border-red-100 dark:border-red-900 text-red-700 dark:text-red-300" : "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-100 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300"}`}>
                   {brandingMsg}
+                </div>
+              )}
+
+              {/* SAVE CONFIRMATION — every branding save is confirmed first */}
+              {pendingBrandingSave && (
+                <div
+                  className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="branding-confirm-title"
+                  onClick={() => setPendingBrandingSave(null)}
+                >
+                  <div
+                    className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900 flex items-center justify-center mb-3">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <h4 id="branding-confirm-title" className="text-base font-bold text-slate-800 dark:text-slate-100">Confirm save</h4>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                      Save changes to <span className="font-semibold text-slate-700 dark:text-slate-200">{pendingBrandingSave.label}</span>? This updates the live portal immediately.
+                    </p>
+                    <div className="flex justify-end gap-2 mt-5">
+                      <button
+                        type="button"
+                        onClick={() => setPendingBrandingSave(null)}
+                        className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-xs font-bold cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={confirmBrandingSave}
+                        className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        Yes, save
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
