@@ -85,6 +85,14 @@ export interface Customization {
   card_brand?: string; // short monogram printed on the card (e.g. "BP")
   card_logo_url?: string; // logo artwork printed on the card face
   card_wordmark?: string; // wordmark at the top of the card (e.g. "THE BEYOND")
+  // Retired feature-strip columns, now holding the member-card copy labels.
+  // See src/lib/cardLabels.ts for the key mapping.
+  feature1_title?: string; // front headline prefix
+  feature1_desc?: string; // front headline / gold caption
+  feature2_title?: string; // back headline, line 1
+  feature2_desc?: string; // back headline, line 2
+  feature3_title?: string; // back helper sentence
+  feature3_desc?: string; // expiry label
   title: string;
   subtitle?: string;
   // Scan terminal (CustomerPortal header)

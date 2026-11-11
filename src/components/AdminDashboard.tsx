@@ -91,6 +91,12 @@ import {
   BrandMonogram,
   type CardFace,
 } from "./MemberCard";
+import {
+  resolveCardLabels,
+  cardLabelUpdates,
+  DEFAULT_CARD_LABELS,
+  type CardLabels,
+} from "../lib/cardLabels";
 
 // Constants for charts
 const COLORS = [
@@ -101,6 +107,15 @@ const COLORS = [
   "#ec4899",
   "#06b6d4",
 ];
+
+// Neutral member used by the Branding tab's live card preview.
+const CARD_PREVIEW_CUSTOMER: Customer = {
+  id: "card-preview",
+  name: "Preview Member",
+  phone: "",
+  qr_code: "CUST-001",
+  created_at: "",
+};
 
 // --- Live-refresh helpers -------------------------------------------------
 
@@ -347,6 +362,14 @@ export default function AdminDashboard({
   const [cardBrandInput, setCardBrandInput] = useState("");
   const [cardWordmarkInput, setCardWordmarkInput] = useState("");
   const [cardLogoInput, setCardLogoInput] = useState("");
+  // Copy printed on the card faces (persisted through the card label columns).
+  const [cardFrontTitleInput, setCardFrontTitleInput] = useState(DEFAULT_CARD_LABELS.frontTitle);
+  const [cardFrontSubtitleInput, setCardFrontSubtitleInput] = useState(DEFAULT_CARD_LABELS.frontSubtitle);
+  const [cardBackTitleInput, setCardBackTitleInput] = useState(DEFAULT_CARD_LABELS.backTitle);
+  const [cardBackSubtitleInput, setCardBackSubtitleInput] = useState(DEFAULT_CARD_LABELS.backSubtitle);
+  const [cardBackHelpInput, setCardBackHelpInput] = useState(DEFAULT_CARD_LABELS.backHelp);
+  const [cardBackExpiryInput, setCardBackExpiryInput] = useState(DEFAULT_CARD_LABELS.backExpiryLabel);
+  const [cardEditFace, setCardEditFace] = useState<CardFace>("front");
   const [h1Input, setH1Input] = useState("");
   const [h2Input, setH2Input] = useState("");
   const [pInput, setPInput] = useState("");
@@ -393,6 +416,7 @@ export default function AdminDashboard({
   const cardWordmark = (customization?.card_wordmark || "THE BEYOND").trim();
   const cardLogoUrl = customization?.card_logo_url || "";
   const systemLogoUrl = customization?.logo_url || "";
+  const cardLabels = resolveCardLabels(customization);
 
   // Filtering & Sorting for Sales Reports
   const [filterShopId, setFilterShopId] = useState("");
@@ -451,6 +475,13 @@ export default function AdminDashboard({
     setCardBrandInput(currentCust.card_brand || "");
     setCardWordmarkInput(currentCust.card_wordmark || "");
     setCardLogoInput(currentCust.card_logo_url || "");
+    const cardCopy = resolveCardLabels(currentCust);
+    setCardFrontTitleInput(cardCopy.frontTitle);
+    setCardFrontSubtitleInput(cardCopy.frontSubtitle);
+    setCardBackTitleInput(cardCopy.backTitle);
+    setCardBackSubtitleInput(cardCopy.backSubtitle);
+    setCardBackHelpInput(cardCopy.backHelp);
+    setCardBackExpiryInput(cardCopy.backExpiryLabel);
     setH1Input(currentCust.home_h1 || "");
     setH2Input(currentCust.home_h2 || "");
     setPInput(currentCust.home_p || "");
@@ -982,6 +1013,13 @@ export default function AdminDashboard({
     setCardBrandInput(c.card_brand || "");
     setCardWordmarkInput(c.card_wordmark || "");
     setCardLogoInput(c.card_logo_url || "");
+    const cardCopy = resolveCardLabels(c);
+    setCardFrontTitleInput(cardCopy.frontTitle);
+    setCardFrontSubtitleInput(cardCopy.frontSubtitle);
+    setCardBackTitleInput(cardCopy.backTitle);
+    setCardBackSubtitleInput(cardCopy.backSubtitle);
+    setCardBackHelpInput(cardCopy.backHelp);
+    setCardBackExpiryInput(cardCopy.backExpiryLabel);
     setH1Input(c.home_h1 || "");
     setH2Input(c.home_h2 || "");
     setPInput(c.home_p || "");
@@ -1036,13 +1074,22 @@ export default function AdminDashboard({
 
   const saveBrandingCard = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    const labels: CardLabels = {
+      frontTitle: cardFrontTitleInput,
+      frontSubtitle: cardFrontSubtitleInput,
+      backTitle: cardBackTitleInput,
+      backSubtitle: cardBackSubtitleInput,
+      backHelp: cardBackHelpInput,
+      backExpiryLabel: cardBackExpiryInput,
+    };
     return await saveBrandingField(
       {
         card_brand: cardBrandInput.trim().toUpperCase(),
         card_wordmark: cardWordmarkInput.trim(),
         card_logo_url: cardLogoInput,
+        ...cardLabelUpdates(labels),
       },
-      "Member card branding",
+      "Member card",
     );
   };
 
@@ -3580,86 +3627,214 @@ export default function AdminDashboard({
 
             <BrandingSection
               className="mt-4"
-              title="Member Card Branding"
-              description="These values are printed on both faces of the member card."
+              title="Member Card"
+              description="Front and back copy printed on every member card."
               editing={editingBrandingSection === "card"}
-              onEdit={() => startBrandingEdit("card")}
+              onEdit={() => {
+                setCardEditFace("front");
+                startBrandingEdit("card");
+              }}
               onCancel={cancelBrandingEdit}
-              onSave={() => requestBrandingSave("Member card branding", saveBrandingCard)}
+              onSave={() => requestBrandingSave("Member card", saveBrandingCard)}
             >
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Monogram</label>
-                  <input
-                    type="text"
-                    value={cardBrandInput}
-                    onChange={(e) => setCardBrandInput(e.target.value.toUpperCase())}
-                    placeholder="BP"
-                    maxLength={4}
-                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Short prefix printed on the card, e.g. &quot;BP 010&quot;. Leave empty to
-                    derive it from the platform title.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Wordmark</label>
-                  <input
-                    type="text"
-                    value={cardWordmarkInput}
-                    onChange={(e) => setCardWordmarkInput(e.target.value)}
-                    placeholder="MY BRAND"
-                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Top-left wordmark on the card front.</p>
-                </div>
-                <div className="lg:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Logo</label>
-                  <div className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
-                    <div className="w-14 h-14 bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
-                      {cardLogoInput ? (
-                        <img src={cardLogoInput} alt="Card logo" className="w-full h-full object-contain" />
-                      ) : (
-                        <span
-                          className="font-black italic text-lg"
-                          style={{
-                            background: "linear-gradient(135deg, #fff2cf 0%, #e8b13a 40%, #b07c1c 70%, #ffd98a 100%)",
-                            WebkitBackgroundClip: "text",
-                            backgroundClip: "text",
-                            color: "transparent",
-                          }}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div className="min-w-0">
+                  {/* One combined card editor: switch between the two faces */}
+                  {editingBrandingSection === "card" && (
+                    <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 mb-4">
+                      {(["front", "back"] as CardFace[]).map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => setCardEditFace(f)}
+                          className={
+                            "px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer " +
+                            (cardEditFace === f
+                              ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100")
+                          }
                         >
-                          {cardBrand || "MA"}
-                        </span>
-                      )}
+                          Edit {f === "front" ? "Front" : "Back"}
+                        </button>
+                      ))}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleCardLogoFileChange}
-                        className="hidden"
-                        id="admin-card-logo-upload"
-                      />
-                      <label
-                        htmlFor="admin-card-logo-upload"
-                        className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block"
-                      >
-                        Upload Card Logo
-                      </label>
-                      <input
-                        type="text"
-                        value={cardLogoInput.startsWith("data:") ? "" : cardLogoInput}
-                        onChange={(e) => setCardLogoInput(e.target.value)}
-                        placeholder="…or paste image URL"
-                        className="mt-2 w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Printed on the card front. Leave empty to use the gold monogram.
-                      </p>
+                  )}
+
+                  {cardEditFace === "front" ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Monogram</label>
+                        <input
+                          type="text"
+                          value={cardBrandInput}
+                          onChange={(e) => setCardBrandInput(e.target.value.toUpperCase())}
+                          placeholder="BP"
+                          maxLength={4}
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Short prefix printed on the card, e.g. &quot;BP 010&quot;. Leave empty to
+                          derive it from the platform title.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Wordmark</label>
+                        <input
+                          type="text"
+                          value={cardWordmarkInput}
+                          onChange={(e) => setCardWordmarkInput(e.target.value)}
+                          placeholder="MY BRAND"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Top-left wordmark on the card front.</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Headline Prefix</label>
+                          <input
+                            type="text"
+                            value={cardFrontTitleInput}
+                            onChange={(e) => setCardFrontTitleInput(e.target.value)}
+                            placeholder="THE"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                          <p className="text-[10px] text-slate-400 mt-1">Printed before the monogram, e.g. &quot;THE BP&quot;.</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Headline Title</label>
+                          <input
+                            type="text"
+                            value={cardFrontSubtitleInput}
+                            onChange={(e) => setCardFrontSubtitleInput(e.target.value)}
+                            placeholder="DISCOUNT CARD"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                          <p className="text-[10px] text-slate-400 mt-1">Second headline line and the gold caption.</p>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Card Logo</label>
+                        <div className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-lg">
+                          <div className="w-14 h-14 bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                            {cardLogoInput ? (
+                              <img src={cardLogoInput} alt="Card logo" className="w-full h-full object-contain" />
+                            ) : (
+                              <span
+                                className="font-black italic text-lg"
+                                style={{
+                                  background: "linear-gradient(135deg, #fff2cf 0%, #e8b13a 40%, #b07c1c 70%, #ffd98a 100%)",
+                                  WebkitBackgroundClip: "text",
+                                  backgroundClip: "text",
+                                  color: "transparent",
+                                }}
+                              >
+                                {cardBrand || "MA"}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleCardLogoFileChange}
+                              className="hidden"
+                              id="admin-card-logo-upload"
+                            />
+                            <label
+                              htmlFor="admin-card-logo-upload"
+                              className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer inline-block"
+                            >
+                              Upload Card Logo
+                            </label>
+                            <input
+                              type="text"
+                              value={cardLogoInput.startsWith("data:") ? "" : cardLogoInput}
+                              onChange={(e) => setCardLogoInput(e.target.value)}
+                              placeholder="…or paste image URL"
+                              className="mt-2 w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              Printed on the card front. Leave empty to use the gold monogram.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Headline Line 1</label>
+                          <input
+                            type="text"
+                            value={cardBackTitleInput}
+                            onChange={(e) => setCardBackTitleInput(e.target.value)}
+                            placeholder="SCAN"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Headline Line 2</label>
+                          <input
+                            type="text"
+                            value={cardBackSubtitleInput}
+                            onChange={(e) => setCardBackSubtitleInput(e.target.value)}
+                            placeholder="TO SAVE"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Helper Text</label>
+                        <textarea
+                          rows={2}
+                          value={cardBackHelpInput}
+                          onChange={(e) => setCardBackHelpInput(e.target.value)}
+                          placeholder="Scan the QR code to check where the card can be used"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Shown under the back headline. Press Enter for a new line.</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Expiry Label</label>
+                        <input
+                          type="text"
+                          value={cardBackExpiryInput}
+                          onChange={(e) => setCardBackExpiryInput(e.target.value)}
+                          placeholder="EXPIRES"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Small label above the expiry date.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                    Live preview · {cardEditFace === "front" ? "Front" : "Back"}
+                  </p>
+                  <div className="rounded-xl overflow-hidden">
+                    <MemberCard
+                      customer={CARD_PREVIEW_CUSTOMER}
+                      face={cardEditFace}
+                      brand={cardBrandInput || cardBrand}
+                      wordmark={cardWordmarkInput || cardWordmark}
+                      cardLogoUrl={cardLogoInput}
+                      systemLogoUrl={systemLogoUrl}
+                      labels={{
+                        frontTitle: cardFrontTitleInput,
+                        frontSubtitle: cardFrontSubtitleInput,
+                        backTitle: cardBackTitleInput,
+                        backSubtitle: cardBackSubtitleInput,
+                        backHelp: cardBackHelpInput,
+                        backExpiryLabel: cardBackExpiryInput,
+                      }}
+                    />
                   </div>
+                  <p className="text-[10px] text-slate-400 mt-2">
+                    Changes appear here as you type. Save asks for confirmation first.
+                  </p>
                 </div>
               </div>
             </BrandingSection>
@@ -4170,6 +4345,7 @@ export default function AdminDashboard({
                     wordmark={cardWordmark}
                     cardLogoUrl={cardLogoUrl}
                     systemLogoUrl={systemLogoUrl}
+                    labels={cardLabels}
                   />
                 </div>
 
@@ -4195,6 +4371,7 @@ export default function AdminDashboard({
                       phone: customer.phone,
                       number: deriveCardNumber(customer.qr_code),
                       expiry: formatCardExpiry(customer.valid_until),
+                      labels: cardLabels,
                     };
                     const faces: Record<CardFace, string> = {
                       front: buildCardFrontSvg(exportOpts),
@@ -4203,6 +4380,7 @@ export default function AdminDashboard({
                         number: exportOpts.number,
                         expiry: exportOpts.expiry,
                         qrUrl: cardQrImageUrl(customer.qr_code, 600),
+                        labels: cardLabels,
                       }),
                     };
                     const svgContent = faces[cardFace];
@@ -4240,12 +4418,14 @@ export default function AdminDashboard({
                       phone: customer.phone,
                       number,
                       expiry,
+                      labels: cardLabels,
                     });
                     const backSvg = buildCardBackSvg({
                       brand: cardBrand,
                       number,
                       expiry,
                       qrUrl: cardQrImageUrl(customer.qr_code, 600),
+                      labels: cardLabels,
                     });
 
                     const printWindow = window.open("", "_blank");

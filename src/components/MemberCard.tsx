@@ -1,5 +1,6 @@
 import React from "react";
 import { Customer } from "../types";
+import { DEFAULT_CARD_LABELS, type CardLabels } from "../lib/cardLabels";
 
 /**
  * The Mi Advantage member card.
@@ -153,6 +154,47 @@ const svgEsc = (s: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+/** Merge caller labels over the defaults, ignoring blank overrides. */
+function cardCopy(labels?: Partial<CardLabels>): CardLabels {
+  const merged = { ...DEFAULT_CARD_LABELS };
+  if (!labels) return merged;
+  (Object.keys(merged) as (keyof CardLabels)[]).forEach((key) => {
+    const value = typeof labels[key] === "string" ? labels[key]!.trim() : "";
+    if (value) merged[key] = value;
+  });
+  return merged;
+}
+
+/** Greedy word wrap for the SVG exporter (the DOM face wraps on its own). */
+function wrapSvgText(text: string, maxChars: number, maxLines = 2): string[] {
+  const paragraphs = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const lines: string[] = [];
+
+  for (const paragraph of paragraphs.length ? paragraphs : [""]) {
+    let current = "";
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      const next = current ? `${current} ${word}` : word;
+      if (current && next.length > maxChars) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = next;
+      }
+    }
+    if (current) lines.push(current);
+  }
+
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = kept[maxLines - 1].replace(/\s+\S*$/, "") + "…";
+    return kept;
+  }
+  return lines;
+}
+
 /** FRONT face as a standalone SVG document. */
 export function buildCardFrontSvg(opts: {
   brand: string;
@@ -162,8 +204,10 @@ export function buildCardFrontSvg(opts: {
   phone: string;
   number: string;
   expiry: string;
+  labels?: Partial<CardLabels>;
 }): string {
   const mark = splitWordmark(opts.wordmark || "THE BEYOND");
+  const copy = cardCopy(opts.labels);
   const arcs = Array.from({ length: 9 }, (_, i) => {
     const isGold = i === 3 || i === 4;
     return `<path d="M ${400 + i * 14} 580 C ${500 + i * 20} 430, ${660 + i * 16} 310, 1010 ${
@@ -193,8 +237,8 @@ ${SVG_DEFS}
   <ellipse cx="198" cy="105" rx="46" ry="9" fill="url(#cx-gold-glow)"/>
 
   <g font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900" fill="#00c8f0" letter-spacing="-1">
-    <text x="48" y="184" font-size="58">THE ${svgEsc(opts.brand)}</text>
-    <text x="48" y="246" font-size="58">DISCOUNT CARD</text>
+    <text x="48" y="184" font-size="58">${svgEsc(`${copy.frontTitle} ${opts.brand}`.trim())}</text>
+    <text x="48" y="246" font-size="58">${svgEsc(copy.frontSubtitle)}</text>
   </g>
 
   ${
@@ -204,7 +248,7 @@ ${SVG_DEFS}
           opts.brand.slice(0, 2),
         )}</text>`
   }
-  <text x="48" y="482" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-style="italic" font-size="26" letter-spacing="1.2" fill="#e8b13a">DISCOUNT CARD</text>
+  <text x="48" y="482" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-style="italic" font-size="26" letter-spacing="1.2" fill="#e8b13a">${svgEsc(copy.frontSubtitle)}</text>
   <text x="952" y="482" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="16" fill="#7f8ea3">${svgEsc(
     opts.name.toUpperCase(),
   )}</text>
@@ -217,7 +261,18 @@ export function buildCardBackSvg(opts: {
   number: string;
   expiry: string;
   qrUrl: string;
+  labels?: Partial<CardLabels>;
 }): string {
+  const copy = cardCopy(opts.labels);
+  const helpLines = wrapSvgText(copy.backHelp, 30, 2);
+  const helpSvg = helpLines
+    .map(
+      (line, i) =>
+        `<text x="72" y="${404 + i * 36}" font-family="Arial, Helvetica, sans-serif" font-weight="500" font-size="26" fill="#ffffff">${svgEsc(
+          line,
+        )}</text>`,
+    )
+    .join("\n  ");
   const tr = Array.from({ length: 6 }, (_, i) => {
     return `<path d="M ${1000 - i * 4} 0 C ${930 - i * 18} ${60 + i * 6}, ${
       900 - i * 22
@@ -244,13 +299,12 @@ ${SVG_DEFS}
   <rect x="5" y="5" width="990" height="570" rx="26" fill="none" stroke="#00c8f0" stroke-width="3"/>
 
   <g font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900" letter-spacing="-1">
-    <text x="72" y="210" font-size="88" fill="url(#cx-scan)">SCAN</text>
-    <text x="72" y="300" font-size="88" fill="#ffffff">TO SAVE</text>
+    <text x="72" y="210" font-size="88" fill="url(#cx-scan)">${svgEsc(copy.backTitle)}</text>
+    <text x="72" y="300" font-size="88" fill="#ffffff">${svgEsc(copy.backSubtitle)}</text>
   </g>
   <rect x="72" y="336" width="300" height="2" fill="url(#cx-gold-line)"/>
   <ellipse cx="222" cy="337" rx="46" ry="9" fill="url(#cx-gold-glow)"/>
-  <text x="72" y="404" font-family="Arial, Helvetica, sans-serif" font-weight="500" font-size="26" fill="#ffffff">Scan the QR code to check</text>
-  <text x="72" y="440" font-family="Arial, Helvetica, sans-serif" font-weight="500" font-size="26" fill="#ffffff">where the card can be used</text>
+  ${helpSvg}
 
   <rect x="524" y="120" width="1.6" height="300" fill="url(#cx-gold-line)" opacity="0.75"/>
   <ellipse cx="525" cy="272" rx="12" ry="70" fill="url(#cx-gold-glow)" opacity="0.75"/>
@@ -264,7 +318,7 @@ ${SVG_DEFS}
     <text x="376" y="488" font-size="19" fill="#00c8f0" letter-spacing="4">${svgEsc(opts.brand)}</text>
     <text x="376" y="520" font-size="31" fill="#ffffff" letter-spacing="2">${svgEsc(opts.number)}</text>
     <rect x="556" y="462" width="360" height="74" rx="10" fill="none" stroke="#e8b13a" stroke-width="2"/>
-    <text x="572" y="488" font-size="19" fill="#e8b13a" letter-spacing="4">EXPIRES</text>
+    <text x="572" y="488" font-size="19" fill="#e8b13a" letter-spacing="4">${svgEsc(copy.backExpiryLabel)}</text>
     <text x="572" y="520" font-size="31" fill="#ffffff" letter-spacing="2">${svgEsc(opts.expiry)}</text>
   </g>
   <rect x="546" y="458" width="2" height="82" fill="#e8b13a"/>
@@ -418,6 +472,7 @@ export function MemberCard({
   wordmark,
   cardLogoUrl,
   systemLogoUrl,
+  labels,
   className = "",
 }: {
   customer: Customer;
@@ -426,6 +481,7 @@ export function MemberCard({
   wordmark?: string;
   cardLogoUrl?: string;
   systemLogoUrl?: string;
+  labels?: Partial<CardLabels>;
   className?: string;
 }) {
   const number = deriveCardNumber(customer.qr_code);
@@ -433,6 +489,7 @@ export function MemberCard({
   const qr = cardQrImageUrl(customer.qr_code, 480);
   const mark = splitWordmark(wordmark || "THE BEYOND");
   const monogram = brand.split("").slice(0, 2);
+  const copy = cardCopy(labels);
 
   /* ------------------------------- FRONT ------------------------------- */
   if (face === "front") {
@@ -478,13 +535,13 @@ export function MemberCard({
                 className="font-black tracking-[-0.02em] whitespace-nowrap"
                 style={{ fontSize: "5.6cqw", color: CARD_CYAN }}
               >
-                THE {brand}
+                {`${copy.frontTitle} ${brand}`.trim()}
               </p>
               <p
                 className="font-black tracking-[-0.02em] whitespace-nowrap"
                 style={{ fontSize: "5.6cqw", color: CARD_CYAN }}
               >
-                DISCOUNT CARD
+                {copy.frontSubtitle}
               </p>
             </div>
 
@@ -521,7 +578,7 @@ export function MemberCard({
                 className="font-bold italic tracking-[0.05em] mt-[1.2%]"
                 style={{ fontSize: "2.5cqw", color: CARD_GOLD }}
               >
-                DISCOUNT CARD
+                {copy.frontSubtitle}
               </p>
             </div>
           </div>
@@ -594,13 +651,13 @@ export function MemberCard({
                   WebkitTextFillColor: "transparent",
                 }}
               >
-                SCAN
+                {copy.backTitle}
               </p>
               <p
                 className="font-black tracking-[-0.01em] whitespace-nowrap"
                 style={{ fontSize: "8.4cqw", color: CARD_TEXT }}
               >
-                TO SAVE
+                {copy.backSubtitle}
               </p>
             </div>
 
@@ -608,11 +665,13 @@ export function MemberCard({
 
             <p
               className="mt-[4%] font-medium leading-snug"
-              style={{ fontSize: "2.45cqw", color: "rgba(255,255,255,0.92)" }}
+              style={{
+                fontSize: "2.45cqw",
+                color: "rgba(255,255,255,0.92)",
+                whiteSpace: "pre-line",
+              }}
             >
-              Scan the QR code to check
-              <br />
-              where the card can be used
+              {copy.backHelp}
             </p>
           </div>
 
@@ -692,7 +751,7 @@ export function MemberCard({
                 marginBottom: "0.55cqw",
               }}
             >
-              EXPIRES
+              {copy.backExpiryLabel}
             </span>
             <span
               className="font-black tracking-[0.06em]"

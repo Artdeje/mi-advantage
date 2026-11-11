@@ -144,6 +144,9 @@ CREATE TABLE IF NOT EXISTS customization (
     login_background_value TEXT DEFAULT 'linear-gradient(135deg, #f8fafc 0%, #ecfdf5 100%)',
     home_background_type TEXT DEFAULT 'none',
     home_background_value TEXT DEFAULT '',
+    -- Retired feature-strip slots, now storing the member-card copy labels
+    -- (front headline prefix/title, back headline lines, helper, expiry label).
+    -- See src/lib/cardLabels.ts for the mapping.
     feature1_title TEXT DEFAULT 'Partner Outlets',
     feature1_desc TEXT DEFAULT 'Approved merchants across Kigali offer exclusive member discounts.',
     feature2_title TEXT DEFAULT 'Instant Savings',

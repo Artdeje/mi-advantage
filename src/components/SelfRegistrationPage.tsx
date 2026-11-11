@@ -12,6 +12,7 @@ import {
   formatCardExpiry,
   type CardFace,
 } from './MemberCard';
+import { resolveCardLabels } from '../lib/cardLabels';
 import {
   Store,
   QrCode,
@@ -71,6 +72,7 @@ export default function SelfRegistrationPage() {
   const cardWordmark = (customization?.card_wordmark || 'THE BEYOND').trim();
   const cardLogoUrl = customization?.card_logo_url || '';
   const systemLogoUrl = customization?.logo_url || '';
+  const cardLabels = resolveCardLabels(customization);
 
   useEffect(() => {
     db.getCustomization().then(setCustomization).catch(() => setCustomization(null));
@@ -206,15 +208,15 @@ export default function SelfRegistrationPage() {
     doc.setTextColor(0, 200, 240);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(15);
-    doc.text(`THE ${brand}`, 6, 24);
-    doc.text('DISCOUNT CARD', 6, 31);
+    doc.text(`${cardLabels.frontTitle} ${brand}`.trim(), 6, 24);
+    doc.text(cardLabels.frontSubtitle, 6, 31);
 
     // gold monogram + caption
     doc.setTextColor(232, 177, 58);
     doc.setFontSize(20);
     doc.text(brand, 6, 46);
     doc.setFontSize(7);
-    doc.text('DISCOUNT CARD', 22, 46);
+    doc.text(cardLabels.frontSubtitle, 22, 46);
 
     /* ----------------------------- BACK FACE ----------------------------- */
     doc.addPage([W, H], 'landscape');
@@ -227,9 +229,9 @@ export default function SelfRegistrationPage() {
     doc.setTextColor(0, 200, 240);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text('SCAN', 6, 18);
+    doc.text(cardLabels.backTitle, 6, 18);
     doc.setTextColor(255, 255, 255);
-    doc.text('TO SAVE', 6, 26);
+    doc.text(cardLabels.backSubtitle, 6, 26);
 
     doc.setDrawColor(232, 177, 58);
     doc.setLineWidth(0.4);
@@ -238,8 +240,8 @@ export default function SelfRegistrationPage() {
     doc.setTextColor(235, 240, 248);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
-    doc.text('Scan the QR code to check', 6, 35);
-    doc.text('where the card can be used', 6, 38.5);
+    const helpLines = doc.splitTextToSize(cardLabels.backHelp, 46) as string[];
+    doc.text(helpLines.slice(0, 2), 6, 35);
 
     // QR image from the rendered canvas
     try {
@@ -262,7 +264,7 @@ export default function SelfRegistrationPage() {
     doc.text(number, 38, 47);
     doc.setTextColor(232, 177, 58);
     doc.setFontSize(5.5);
-    doc.text('EXPIRES', 52, 44.4);
+    doc.text(cardLabels.backExpiryLabel, 52, 44.4);
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(9);
     doc.text(expiry, 52, 48.6);
@@ -362,6 +364,7 @@ export default function SelfRegistrationPage() {
                     wordmark={cardWordmark}
                     cardLogoUrl={cardLogoUrl}
                     systemLogoUrl={systemLogoUrl}
+                    labels={cardLabels}
                   />
                 </div>
 

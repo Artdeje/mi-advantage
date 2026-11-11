@@ -67,5 +67,13 @@ ALTER TABLE public.customization ADD COLUMN IF NOT EXISTS scan_subtitle TEXT DEF
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS activation_pin TEXT;
 
 -- =========================================================
+-- 8. MEMBER CARD COPY LABELS
+-- The six card labels (front prefix/title, back headline lines, helper,
+-- expiry label) reuse the retired feature1/2/3 columns below, so no new
+-- columns are required. Values matching the old feature-strip defaults are
+-- treated as "not customised" by src/lib/cardLabels.ts.
+-- =========================================================
+
+-- =========================================================
 -- DONE. Now run: npm run db:init
 -- =========================================================
