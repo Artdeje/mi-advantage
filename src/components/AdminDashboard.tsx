@@ -2687,55 +2687,46 @@ export default function AdminDashboard({
                 </p>
               )}
 
-              {/* SEARCH BAR & FILTERING DROP-DOWNS */}
-              <div className="space-y-3 mb-4 bg-slate-50 dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-800">
+              {/* SEARCH BAR & FILTERING DROP-DOWNS — one compact row on desktop */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-2xl border border-slate-200/60 dark:border-slate-800">
                 {/* Search input */}
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <div className="relative flex-1 min-w-0">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     placeholder="Search name, email, phone or CUST ID..."
                     value={custSearchTerm}
                     onChange={(e) => setCustSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    aria-label="Search cards"
+                    className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
 
-                {/* Date Filter & Sort By controls */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-                      Card Status
-                    </label>
-                    <select
-                      value={custFilterStatus}
-                      onChange={(e) =>
-                        setCustFilterStatus(e.target.value as any)
-                      }
-                      className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    >
-                      <option value="all">All Members</option>
-                      <option value="active">Active Only</option>
-                      <option value="expired">Renew Subscription (Expired)</option>
-                    </select>
-                  </div>
+                {/* Compact filters, aligned in the same row */}
+                <select
+                  value={custFilterStatus}
+                  onChange={(e) => setCustFilterStatus(e.target.value as any)}
+                  aria-label="Card status"
+                  title="Card status"
+                  className="w-full sm:w-[150px] shrink-0 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value="all">All Members</option>
+                  <option value="active">Active Only</option>
+                  <option value="expired">Renew (Expired)</option>
+                </select>
 
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-                      Sorting Order
-                    </label>
-                    <select
-                      value={custSortBy}
-                      onChange={(e) => setCustSortBy(e.target.value as any)}
-                      className="w-full px-2 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    >
-                      <option value="name_asc">Name (A-Z)</option>
-                      <option value="name_desc">Name (Z-A)</option>
-                      <option value="code_asc">CUST ID Code</option>
-                      <option value="expiry_soon">Soonest Expiration</option>
-                    </select>
-                  </div>
-                </div>
+                <select
+                  value={custSortBy}
+                  onChange={(e) => setCustSortBy(e.target.value as any)}
+                  aria-label="Sorting order"
+                  title="Sorting order"
+                  className="w-full sm:w-[155px] shrink-0 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value="name_asc">Name (A-Z)</option>
+                  <option value="name_desc">Name (Z-A)</option>
+                  <option value="code_asc">CUST ID Code</option>
+                  <option value="expiry_soon">Soonest Expiration</option>
+                </select>
               </div>
 
               {/* RESULTS METRICS */}
